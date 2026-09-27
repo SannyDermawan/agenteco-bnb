@@ -12,6 +12,10 @@ build/
 .env.*
 !.env.example
 
+# Foundry build artifacts (out/ is covered above); broadcast/ keeps real deployments, not dry runs
+cache/
+broadcast/*/dry-run/
+
 # local agent / keeper checkpoints
 *-state.json
 .keeper-state.json
