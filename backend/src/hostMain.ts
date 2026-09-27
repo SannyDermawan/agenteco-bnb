@@ -48,34 +48,31 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('SIGTERM', () => shutdown('SIGTERM'))
 
-  let lastRatingScan = 0
-  while (running) {
-    try {
-      await runHostCycleOnce()
-    } catch (error) {
-      logError('Host cycle failed', error, 'HOST')
-    }
-    try {
-      await runSellerHostCycleOnce()
-    } catch (error) {
-      logError('Seller host cycle failed', error, 'HOST')
-    }
-    try {
-      await runArbiterCycleOnce()
-    } catch (error) {
-      logError('Arbiter cycle failed', error, 'HOST')
-    }
-    // Ratings made outside our own flows, about once a minute.
-    if (Date.now() - lastRatingScan >= RATING_SCAN_MS) {
-      lastRatingScan = Date.now()
+  /**
+   * One independent loop per role. Sellers must answer a funded escrow within
+   * the 120 s accept timeout, so they can't wait behind a buyer that is busy
+   * sending three funding transactions on a slow RPC — and the arbiter's
+   * deadlines are no different. Each role signs with its own wallets, so the
+   * loops never share a nonce. A loop never overlaps itself.
+   */
+  async function loop(label: string, every: number, cycle: () => Promise<void>): Promise<void> {
+    while (running) {
       try {
-        await indexRecentRatings(publicClient)
+        await cycle()
       } catch (error) {
-        logError('Rating index failed', error, 'HOST')
+        logError(`${label} cycle failed`, error, 'HOST')
       }
+      if (running) await sleep(every)
     }
-    if (running) await sleep(INTERVAL_MS)
   }
+
+  await Promise.all([
+    loop('Buyer host', INTERVAL_MS, runHostCycleOnce),
+    loop('Seller host', INTERVAL_MS, runSellerHostCycleOnce),
+    loop('Arbiter', INTERVAL_MS, runArbiterCycleOnce),
+    // Ratings made outside our own flows, about once a minute.
+    loop('Rating index', RATING_SCAN_MS, () => indexRecentRatings(publicClient)),
+  ])
 
   log('Stopped.', 'HOST')
 }
