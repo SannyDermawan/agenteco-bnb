@@ -61,13 +61,13 @@ export default function DashboardPage() {
                   <NeumorphicCard className="grid grid-cols-2 gap-4 p-5">
                     <div>
                       <div className="text-[19px] font-semibold text-[#F5F5F7]">
-                        {reputation.data ? (Number(reputation.data[3]) / 100).toFixed(1) : '…'}%
+                        {reputation.data ? (reputation.data.successPct === null ? '—' : `${reputation.data.successPct.toFixed(1)}%`) : '…'}
                       </div>
                       <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Success Rate</div>
                     </div>
                     <div>
                       <div className="text-[19px] font-semibold text-[#F5F5F7]">
-                        {reputation.data ? Number(reputation.data[0]) : '…'}
+                        {reputation.data ? reputation.data.completedJobs : '…'}
                       </div>
                       <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Completed Jobs</div>
                     </div>

@@ -18,9 +18,10 @@ export function AgentReputationStats({
 }) {
   const { data } = useReputation(walletAddress)
 
-  const completedJobs = data ? Number(data[0]) : fallback.completedJobs
-  const successRate = data ? Number(data[3]) / 100 : fallback.successRate
-  const reputation = data ? Number(data[3]) / 100 : fallback.reputation
+  const completedJobs = data ? data.completedJobs : fallback.completedJobs
+  const successRate = data ? (data.successPct === null ? '—' : `${Math.round(data.successPct)}%`) : `${fallback.successRate}%`
+  const rating = data?.stars != null ? `★ ${data.stars.toFixed(1)}` : 'No ratings yet'
+  const ratingCount = data?.ratingCount ?? 0
 
   return (
     <NeumorphicCard className="grid grid-cols-2 gap-5 p-6 sm:grid-cols-4">
@@ -33,12 +34,14 @@ export function AgentReputationStats({
         <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Completed Jobs</div>
       </div>
       <div>
-        <div className="text-[18px] font-semibold text-[#F5F5F7]">{successRate}%</div>
+        <div className="text-[18px] font-semibold text-[#F5F5F7]">{successRate}</div>
         <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Success Rate</div>
       </div>
       <div>
-        <div className="text-[18px] font-semibold text-[#F5F5F7]">{reputation}</div>
-        <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Reputation</div>
+        <div className="text-[18px] font-semibold text-[#F5F5F7]">{rating}</div>
+        <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">
+          Rating{ratingCount > 0 ? ` · ${ratingCount} ${ratingCount === 1 ? 'review' : 'reviews'}` : ''}
+        </div>
       </div>
     </NeumorphicCard>
   )

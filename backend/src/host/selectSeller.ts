@@ -4,6 +4,10 @@ import { getOnchainReputation } from './reputation.ts'
 export interface SellerFilters {
   minSuccessRate: number | null
   minCompletedJobs: number | null
+  /**
+   * Minimum average buyer rating on the contract's 1–100 scale (the UI shows
+   * it as stars × 20). Stored in the agent's minReputation column.
+   */
   minReputation: number | null
 }
 
@@ -32,11 +36,10 @@ export async function selectSeller(
         const rep = await getOnchainReputation(onchain.publicClient, candidate.walletAddress as `0x${string}`)
         const okSuccess = filters.minSuccessRate === null || rep.successRatePct >= filters.minSuccessRate
         const okCompleted = filters.minCompletedJobs === null || rep.completedJobs >= filters.minCompletedJobs
-        // Reputation and success rate are the same on-chain number in this
-        // contract (see §9) — kept as a separate buyer-facing filter field
-        // for clarity, checked the same way.
-        const okReputation = filters.minReputation === null || rep.successRatePct >= filters.minReputation
-        return okSuccess && okCompleted && okReputation ? candidate : null
+        // A minimum rating excludes sellers nobody has rated yet.
+        const okRating =
+          filters.minReputation === null || (rep.avgRatingScore !== null && rep.avgRatingScore >= filters.minReputation)
+        return okSuccess && okCompleted && okRating ? candidate : null
       })
     )
     qualified = checked.filter((c): c is DiscoveredAgent => c !== null)

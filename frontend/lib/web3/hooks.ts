@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { decodeEventLog, type TransactionReceipt } from 'viem'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from './abi'
+import { summarizeReputation } from './reputation'
 
 const contract = { address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI } as const
 
@@ -122,12 +123,13 @@ export function useEscrowTimestampsMulti(escrowIds: bigint[]) {
   })
 }
 
+/** On-chain reputation for `address`, as a named summary (see ./reputation.ts). */
 export function useReputation(address?: `0x${string}`) {
   return useReadContract({
     ...contract,
     functionName: 'getReputation',
     args: address ? [address] : undefined,
-    query: { enabled: !!address },
+    query: { enabled: !!address, select: summarizeReputation },
   })
 }
 
@@ -163,16 +165,19 @@ export function useUsdtAllowance(owner?: `0x${string}`) {
 // WRITES — shared shape: { write, hash, isPending, isConfirming, isSuccess, error, reset }
 // =================================================================
 
+// Actions that take only the escrow id. Dispute actions also carry a hash —
+// see useHashedEscrowAction below.
 type SimpleEscrowAction =
   | 'startExecution'
   | 'fundEscrow'
   | 'acceptAndSettle'
-  | 'raiseDispute'
   | 'refundEscrow'
+  | 'claimAcceptTimeout'
   | 'claimExecutionTimeout'
   | 'finalizeAfterReviewWindow'
-  | 'resolveDisputeForSeller'
-  | 'resolveDisputeForBuyer'
+  | 'claimDisputeTimeout'
+
+type HashedEscrowAction = 'raiseDispute' | 'submitDisputeResponse' | 'resolveDisputeForSeller' | 'resolveDisputeForBuyer'
 
 function useEscrowAction(functionName: SimpleEscrowAction) {
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract()
@@ -181,6 +186,21 @@ function useEscrowAction(functionName: SimpleEscrowAction) {
   const write = useCallback(
     (escrowId: bigint) => {
       writeContract({ ...contract, functionName, args: [escrowId] })
+    },
+    [writeContract, functionName]
+  )
+
+  return { write, hash, isPending, isConfirming, isSuccess, error, reset }
+}
+
+/** Dispute actions: (escrowId, keccak256 of the off-chain text or rationale object). */
+function useHashedEscrowAction(functionName: HashedEscrowAction) {
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract()
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
+
+  const write = useCallback(
+    (escrowId: bigint, textOrRationaleHash: `0x${string}`) => {
+      writeContract({ ...contract, functionName, args: [escrowId, textOrRationaleHash] })
     },
     [writeContract, functionName]
   )
@@ -201,7 +221,19 @@ export function useAcceptAndSettle() {
 }
 
 export function useRaiseDispute() {
-  return useEscrowAction('raiseDispute')
+  return useHashedEscrowAction('raiseDispute')
+}
+
+export function useSubmitDisputeResponse() {
+  return useHashedEscrowAction('submitDisputeResponse')
+}
+
+export function useClaimAcceptTimeout() {
+  return useEscrowAction('claimAcceptTimeout')
+}
+
+export function useClaimDisputeTimeout() {
+  return useEscrowAction('claimDisputeTimeout')
 }
 
 export function useRefundEscrow() {
@@ -217,11 +249,11 @@ export function useFinalizeAfterReviewWindow() {
 }
 
 export function useResolveDisputeForSeller() {
-  return useEscrowAction('resolveDisputeForSeller')
+  return useHashedEscrowAction('resolveDisputeForSeller')
 }
 
 export function useResolveDisputeForBuyer() {
-  return useEscrowAction('resolveDisputeForBuyer')
+  return useHashedEscrowAction('resolveDisputeForBuyer')
 }
 
 export function useMarkDelivered() {
@@ -263,11 +295,11 @@ export function useCreateEscrow() {
   const { data: receipt, isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
 
   const write = useCallback(
-    (seller: `0x${string}`, amount: bigint, executionWindow: bigint, reviewWindow: bigint) => {
+    (seller: `0x${string}`, amount: bigint, executionWindow: bigint, reviewWindow: bigint, taskHash: `0x${string}`) => {
       writeContract({
         ...contract,
         functionName: 'createEscrow',
-        args: [seller, amount, executionWindow, reviewWindow],
+        args: [seller, amount, executionWindow, reviewWindow, taskHash],
       })
     },
     [writeContract]

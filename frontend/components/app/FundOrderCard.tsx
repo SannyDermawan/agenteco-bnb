@@ -11,6 +11,7 @@ import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib
 import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS } from '@/lib/web3/constants'
 import { parseCreatedEscrowId, useUsdtDecimals } from '@/lib/web3/hooks'
 import { assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { taskHash } from '@shared/hashes'
 import { fundOrder, type ApiOrder } from '@/lib/api/orders'
 import { ArrowRightIcon } from './icons'
 
@@ -60,7 +61,20 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
         address: AGENT_ECO_ADDRESS,
         abi: AGENT_ECO_ABI,
         functionName: 'createEscrow',
-        args: [seller, amount, EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS],
+        args: [
+          seller,
+          amount,
+          EXECUTION_WINDOW_SECONDS,
+          REVIEW_WINDOW_SECONDS,
+          taskHash({
+            capability: order.capability,
+            brief: {},
+            price: order.price,
+            buyer: address,
+            seller,
+            nonce: crypto.randomUUID(),
+          }),
+        ],
       })
       const createReceipt = await waitForTransactionReceipt(wagmiConfig, { hash: createHash })
       const escrowId = parseCreatedEscrowId(createReceipt)

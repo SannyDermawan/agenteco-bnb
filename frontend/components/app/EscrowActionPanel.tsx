@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { keccak256, stringToHex, zeroHash } from 'viem'
 import { useAccount, useSignMessage, useWriteContract } from 'wagmi'
 import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { wagmiConfig } from '@/lib/web3/config'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
 import { submitDisputeReason } from '@/lib/api/disputes'
+import { textHash } from '@shared/hashes'
 import {
   useAcceptAndSettle,
   useClaimExecutionTimeout,
@@ -15,8 +17,6 @@ import {
   useIsReviewExpired,
   useMarkDelivered,
   useRefundEscrow,
-  useResolveDisputeForBuyer,
-  useResolveDisputeForSeller,
   useStartExecution,
   useUsdtDecimals,
 } from '@/lib/web3/hooks'
@@ -103,8 +103,6 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
   const refund = useActionRunner(useRefundEscrow(), escrowId, onChanged)
   const claimTimeout = useActionRunner(useClaimExecutionTimeout(), escrowId, onChanged)
   const finalize = useActionRunner(useFinalizeAfterReviewWindow(), escrowId, onChanged)
-  const resolveForSeller = useActionRunner(useResolveDisputeForSeller(), escrowId, onChanged)
-  const resolveForBuyer = useActionRunner(useResolveDisputeForBuyer(), escrowId, onChanged)
 
   const markDeliveredAction = useMarkDelivered()
   const [resultText, setResultText] = useState('')
@@ -133,7 +131,7 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
         address: AGENT_ECO_ADDRESS,
         abi: AGENT_ECO_ABI,
         functionName: 'raiseDispute',
-        args: [escrowId],
+        args: [escrowId, textHash(reason)],
       })
       await waitForTransactionReceipt(wagmiConfig, { hash })
     } catch (err) {
@@ -246,21 +244,17 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
     )
   }
 
+  // Arbiter decisions happen on the Disputes page, next to the AI recommendation
+  // and with a written rationale whose hash goes on-chain.
   if (label === 'DISPUTED' && isArbiter) {
     buttons.push(
-      <ActionButton
-        key="for-seller"
-        label="Resolve for Seller"
-        onClick={resolveForSeller.run}
-        pending={resolveForSeller.pending}
-      />,
-      <ActionButton
-        key="for-buyer"
-        label="Resolve for Buyer"
-        onClick={resolveForBuyer.run}
-        pending={resolveForBuyer.pending}
-        variant="danger"
-      />
+      <Link
+        key="arbiter"
+        href="/app/disputes"
+        className="flex items-center justify-center rounded-xl bg-[#5B5FEF] py-2.5 text-[13.5px] font-medium text-white transition hover:brightness-110"
+      >
+        Review in Disputes →
+      </Link>
     )
   }
 
@@ -272,8 +266,6 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
     refund.error?.message,
     claimTimeout.error?.message,
     finalize.error?.message,
-    resolveForSeller.error?.message,
-    resolveForBuyer.error?.message,
     markDeliveredAction.error?.message,
   ].filter(Boolean)
 

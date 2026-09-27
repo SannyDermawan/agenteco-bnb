@@ -1,4 +1,4 @@
-import { decodeEventLog, parseUnits, type Address, type TransactionReceipt } from 'viem'
+import { decodeEventLog, parseUnits, type Address, type Hex, type TransactionReceipt } from 'viem'
 import {
   AGENT_ECO_ABI,
   AGENT_ECO_ADDRESS,
@@ -24,11 +24,15 @@ export function parseCreatedEscrowId(receipt: TransactionReceipt): bigint | null
   return null
 }
 
-/** Buyer side: create the escrow for the negotiated price, then fund it. */
+/**
+ * Buyer side: create the escrow for the negotiated price, committing the task's
+ * hash (see ../shared/hashes.ts), then fund it.
+ */
 export async function createAndFundEscrow(
   clients: OnchainClients,
   sellerAddress: Address,
-  priceUsdt: number
+  priceUsdt: number | string,
+  taskHash: Hex
 ): Promise<bigint> {
   const { account, publicClient, walletClient } = clients
   const decimals = await publicClient.readContract({
@@ -42,7 +46,7 @@ export async function createAndFundEscrow(
     address: AGENT_ECO_ADDRESS,
     abi: AGENT_ECO_ABI,
     functionName: 'createEscrow',
-    args: [sellerAddress, amount, EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS],
+    args: [sellerAddress, amount, EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS, taskHash],
   })
   const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createHash })
   const escrowId = parseCreatedEscrowId(createReceipt)

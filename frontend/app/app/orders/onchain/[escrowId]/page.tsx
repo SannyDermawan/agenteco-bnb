@@ -173,20 +173,20 @@ export default function OnChainOrderPage({ params }: { params: Promise<{ escrowI
                 <h3 className="mb-3 text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">SELLER REPUTATION</h3>
                 <div className="grid grid-cols-2 gap-4 text-[13px]">
                   <div>
-                    <div className="text-[18px] font-semibold text-[#F5F5F7]">{rep[0].toString()}</div>
+                    <div className="text-[18px] font-semibold text-[#F5F5F7]">{rep.completedJobs}</div>
                     <div className="mt-0.5 text-[11px] text-[#8B8D96]">Completed</div>
                   </div>
                   <div>
-                    <div className="text-[18px] font-semibold text-[#F5F5F7]">{rep[1].toString()}</div>
+                    <div className="text-[18px] font-semibold text-[#F5F5F7]">{rep.failedJobs}</div>
                     <div className="mt-0.5 text-[11px] text-[#8B8D96]">Failed</div>
                   </div>
                   <div>
-                    <div className="text-[18px] font-semibold text-[#F5F5F7]">{(Number(rep[3]) / 100).toFixed(1)}%</div>
+                    <div className="text-[18px] font-semibold text-[#F5F5F7]">{rep.successPct === null ? '—' : `${rep.successPct.toFixed(1)}%`}</div>
                     <div className="mt-0.5 text-[11px] text-[#8B8D96]">Success Rate</div>
                   </div>
                   <div>
                     <div className="text-[18px] font-semibold text-[#F5F5F7]">
-                      {decimals !== undefined ? formatUnits(rep[2], decimals) : '…'}
+                      {decimals !== undefined ? formatUnits(rep.volume, decimals) : '…'}
                     </div>
                     <div className="mt-0.5 text-[11px] text-[#8B8D96]">Volume (USDT)</div>
                   </div>

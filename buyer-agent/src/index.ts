@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import type { LocalAccount } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
+import { taskHash } from '../../agent-runtime/src/shared/hashes.ts'
 import { DemoAgentRuntime } from '../../agent-runtime/src/runtime.ts'
 import { RPC_URL } from '../../agent-runtime/src/network.ts'
 import { discoverAgents, registerOrSyncSelf } from '../../agent-runtime/src/registryClient.ts'
@@ -65,7 +67,15 @@ async function handleAgreedOrders(
     }
 
     console.log(`[${runtime.config.name}] order ${order.id}: funding escrow for ${order.price} USDT…`)
-    const escrowId = await createAndFundEscrow(onchain, seller.walletAddress, Number(order.price))
+    const hash = taskHash({
+      capability: order.capability,
+      brief: {},
+      price: order.price,
+      buyer: onchain.account.address,
+      seller: seller.walletAddress,
+      nonce: randomUUID(),
+    })
+    const escrowId = await createAndFundEscrow(onchain, seller.walletAddress, order.price, hash)
     await attachEscrowToOrder(API_URL, account, order.id, escrowId.toString())
     console.log(`[${runtime.config.name}] order ${order.id}: funded as escrow #${escrowId}.`)
   }

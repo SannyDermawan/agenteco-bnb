@@ -5,14 +5,13 @@ import { AgentStatus } from './AgentStatus'
 import { BrandMarkIcon, ArrowRightIcon } from './icons'
 import type { AgentSummary } from '@/lib/agenteco-data'
 import { useReputation } from '@/lib/web3/hooks'
+import { formatReputationLine } from '@/lib/web3/reputation'
 
 /** For an agent with an on-chain wallet, reputation is read live from AgentEco.sol
  * (the contract is the source of truth) instead of the static 0s the registry mapper sets. */
 export function AgentCard({ agent }: { agent: AgentSummary }) {
   const { data } = useReputation(agent.walletAddress)
-  const completedJobs = data ? Number(data[0]) : agent.completedJobs
-  const successRate = data ? Number(data[3]) / 100 : agent.successRate
-  const reputation = data ? Number(data[3]) / 100 : agent.reputation
+  const reputationLine = data ? formatReputationLine(data) : 'No ratings yet · 0 jobs'
 
   return (
     <NeumorphicCard className="flex flex-col p-5">
@@ -42,11 +41,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
         <span className="font-semibold text-[#F5F5F7]">{agent.price.toFixed(2)} USDT</span>{' '}
         <span className="text-[#8B8D96]">/ task</span>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-[#8B8D96]">
-        <span>{completedJobs} completed jobs</span>
-        <span>{successRate}% success rate</span>
-        <span>Rep {reputation}</span>
-      </div>
+      <div className="mt-1.5 text-[11.5px] text-[#8B8D96]">{reputationLine}</div>
 
       <Link
         href={`/app/agents/${agent.id}`}

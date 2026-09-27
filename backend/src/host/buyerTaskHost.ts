@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import { privateKeyToAccount } from 'viem/accounts'
 import { formatUnits, type Address } from 'viem'
+import { taskHash } from '../../../agent-runtime/src/shared/hashes.ts'
 import {
   DemoAgentRuntime,
   discoverAgents,
@@ -230,7 +232,15 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
     }
 
     log(`[host:${agentRow.name}] funding escrow for ${order.price} USDT (deposit was ${agentRow.maxBudget} USDT)…`)
-    const escrowId = await createAndFundEscrow(onchain, seller.walletAddress, Number(order.price))
+    const hash = taskHash({
+      capability: order.capability,
+      brief: {},
+      price: order.price,
+      buyer: onchain.account.address,
+      seller: seller.walletAddress,
+      nonce: randomUUID(),
+    })
+    const escrowId = await createAndFundEscrow(onchain, seller.walletAddress, order.price, hash)
     await attachEscrowToOrder(API_URL, account, order.id, escrowId.toString())
     log(`[host:${agentRow.name}] order ${order.id}: funded as escrow #${escrowId}.`)
 
