@@ -1,7 +1,9 @@
-import { randomUUID } from 'node:crypto'
 import { privateKeyToAccount } from 'viem/accounts'
 import { formatUnits, type Address } from 'viem'
-import { taskHash } from '../../../agent-runtime/src/shared/hashes.ts'
+import { hireWithTask } from '../../../agent-runtime/src/tasksClient.ts'
+import { NEGOTIATION_ROUNDS } from '../../../agent-runtime/src/runtime.ts'
+import { decideTurn } from '../ai/negotiate.ts'
+import { buildNegotiationExtras } from './negotiationContext.ts'
 import {
   DemoAgentRuntime,
   discoverAgents,
@@ -77,6 +79,9 @@ export interface HostedBuyerAgentRow {
   minSuccessRate: number | null
   minCompletedJobs: number | null
   minReputation: number | null
+  /** What to buy — validated against the capability's input schema at creation. */
+  taskBrief: unknown
+  acceptanceCriteria: string | null
 }
 
 /**
@@ -168,22 +173,32 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
   for (const negotiation of allNegotiations.filter((n) => n.status === 'open')) {
     if (!isMyTurn(negotiation, 'buyer')) continue
     const sellerRes = await fetch(`${API_URL}/agents/${negotiation.sellerAgentId}`)
-    const seller = (await sellerRes.json()) as { price: string }
-    const runtime = buyerRuntimeFor(agentRow, Number(seller.price))
+    const seller = (await sellerRes.json()) as { price: string; walletAddress: string | null }
+    const listingPrice = Number(seller.price)
+    const runtime = buyerRuntimeFor(agentRow, listingPrice)
 
     const lastMessage = negotiation.messages[negotiation.messages.length - 1]
     const offeredPrice = Number(lastMessage.price)
-    const priorOffers = countOffersBySide(negotiation, 'buyer')
-    const decision = runtime.decideOnOffer(offeredPrice, priorOffers)
-    log(
-      `[host:${agentRow.name}] negotiation ${negotiation.id}: incoming ${offeredPrice} ${TOKEN_SYMBOL} -> ${decision.action}` +
-        (decision.action === 'counter' ? ` (${decision.price} ${TOKEN_SYMBOL})` : '')
-    )
-    await respondToNegotiation(API_URL, account, negotiation.id, {
-      side: 'buyer',
-      action: decision.action,
-      ...(decision.action === 'counter' ? { price: decision.price } : {}),
+    const extras = await buildNegotiationExtras(API_URL, onchain.publicClient, negotiation, {
+      taskBrief: agentRow.taskBrief,
+      sellerWallet: seller.walletAddress,
     })
+    const move = await decideTurn({
+      runtime,
+      offeredPrice,
+      myPriorOfferCount: countOffersBySide(negotiation, 'buyer'),
+      listingPrice,
+      maxRounds: NEGOTIATION_ROUNDS,
+      capability: negotiation.capability,
+      agentId: agentRow.id,
+      ...extras,
+    })
+    log(
+      `[host:${agentRow.name}] negotiation ${negotiation.id}: incoming ${offeredPrice} ${TOKEN_SYMBOL} -> ${move.action}` +
+        (move.action === 'counter' ? ` (${move.price} ${TOKEN_SYMBOL})` : '') +
+        ` [${move.source}${move.adjusted ? ', adjusted' : ''}]`
+    )
+    await respondToNegotiation(API_URL, account, negotiation.id, { side: 'buyer', ...move })
     return
   }
 
@@ -233,18 +248,22 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
       continue
     }
 
+    if (agentRow.taskBrief === null || agentRow.taskBrief === undefined) {
+      log(`[host:${agentRow.name}] order ${order.id}: this buyer has no task brief — cannot hire.`)
+      continue
+    }
+
+    // Store the task, escrow its hash, link the two (spec §5).
     log(`[host:${agentRow.name}] funding escrow for ${order.price} ${TOKEN_SYMBOL} (deposit was ${agentRow.maxBudget} ${TOKEN_SYMBOL})…`)
-    const hash = taskHash({
+    const { escrowId, task } = await hireWithTask(API_URL, onchain, {
       capability: order.capability,
-      brief: {},
+      brief: agentRow.taskBrief,
+      criteria: agentRow.acceptanceCriteria,
       price: order.price,
-      buyer: onchain.account.address,
       seller: seller.walletAddress,
-      nonce: randomUUID(),
     })
-    const escrowId = await createAndFundEscrow(onchain, seller.walletAddress, order.price, hash)
     await attachEscrowToOrder(API_URL, account, order.id, escrowId.toString())
-    log(`[host:${agentRow.name}] order ${order.id}: funded as escrow #${escrowId}.`)
+    log(`[host:${agentRow.name}] order ${order.id}: funded as escrow #${escrowId} (task ${task.taskHash.slice(0, 10)}…).`)
 
     await refundLeftover(onchain, depositorWallet, agentRow.name)
     return
