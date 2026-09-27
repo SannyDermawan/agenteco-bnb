@@ -1,13 +1,16 @@
 import type { AgentConfig } from '../../agent-runtime/src/types.ts'
 
-// Hackathon demo scenario §5.1 — Juri A's seller agent.
+// A self-hosted seller: runs on its own machine with its own wallet, and
+// executes jobs with the shared capability code (agent-runtime/src/capabilities).
+// It has no model of its own, so it offers a capability that still has a
+// useful code-only result — translation needs a model and can't be served here.
 export const sellerAgentConfig: AgentConfig = {
-  name: 'IndoPrice Agent',
+  name: 'CSV Stats Agent',
   role: 'seller',
-  capabilities: ['product_price_research'],
-  description: 'Researches product prices across Indonesian e-commerce marketplaces on request.',
-  category: 'Research',
-  service: 'Product Price Research',
+  capabilities: ['data_analysis'],
+  description: 'Computes per-column statistics and date trends for a CSV of up to 200 rows.',
+  category: 'Data',
+  service: 'Data Analysis',
   basePrice: 0.2,
   minimumPrice: 0.15,
 }

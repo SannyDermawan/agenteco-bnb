@@ -2,7 +2,7 @@
   "name": "agenteco-agent-runtime",
   "version": "0.1.0",
   "private": true,
-  "description": "Generic DemoAgentRuntime shared by buyer-agent and seller-agent — capability matching, offer/counter-offer policy, and canned demo task execution. Not deployed on its own.",
+  "description": "Generic DemoAgentRuntime shared by buyer-agent and seller-agent — capability matching, offer/counter-offer policy, the code half of the 4 capabilities, and on-chain clients. Not deployed on its own.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p .",

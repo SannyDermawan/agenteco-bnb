@@ -9,7 +9,7 @@ export {
   assertRpcMatchesNetwork,
 } from './network.ts'
 export { DemoAgentRuntime } from './runtime.ts'
-export type { AgentConfig, AgentRole, DemoTaskResult, NegotiationDecision } from './types.ts'
+export type { AgentConfig, AgentRole, NegotiationDecision } from './types.ts'
 export { findOwnAgent, registerOrSyncSelf, discoverAgents } from './registryClient.ts'
 export type { RegistryAgent, RegisterOptions, DiscoveredAgent } from './registryClient.ts'
 export {

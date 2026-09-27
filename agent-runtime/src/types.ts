@@ -13,11 +13,12 @@ export interface AgentConfig {
   minimumPrice?: number
   /** Buyer only: the highest price this agent is allowed to pay. */
   maxBudget?: number
-}
-
-export interface DemoTaskResult {
-  status: 'completed'
-  [key: string]: unknown
+  /** Seller only: style and focus for its model (≤ 500 chars, spec §8.3). */
+  customInstructions?: string
+  /** Buyer only: what to buy — must match the capability's input schema. */
+  taskBrief?: unknown
+  /** Buyer only: what a good result must satisfy (≤ 500 chars). */
+  acceptanceCriteria?: string
 }
 
 export type NegotiationDecision =

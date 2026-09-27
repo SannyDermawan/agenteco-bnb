@@ -77,6 +77,9 @@ export async function registerOrSyncSelf(config: AgentConfig, options: RegisterO
     price: config.basePrice,
     minimumPrice: config.minimumPrice,
     maxBudget: config.maxBudget,
+    customInstructions: config.customInstructions,
+    taskBrief: config.taskBrief,
+    acceptanceCriteria: config.acceptanceCriteria,
     walletAddress: options.walletAddress,
     isOnline: true,
   }

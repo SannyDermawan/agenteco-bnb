@@ -1,42 +1,14 @@
-import type { AgentConfig, DemoTaskResult, NegotiationDecision } from './types.ts'
-
-// Canned results per capability, per MVP spec §16 — the "task execution" is
-// mock data, not a real integration. What has to be real is the agent
-// interaction, order lifecycle, escrow, and settlement around it.
-const DEMO_RESULTS: Record<string, () => DemoTaskResult> = {
-  product_price_research: () => ({
-    status: 'completed',
-    itemsFound: 10,
-    averagePrice: 8_500_000,
-    currency: 'IDR',
-  }),
-  data_analysis: () => ({
-    status: 'completed',
-    rowsProcessed: 1_200,
-    insights: 5,
-    confidencePct: 92,
-  }),
-  translation: () => ({
-    status: 'completed',
-    wordsTranslated: 450,
-    sourceLang: 'en',
-    targetLang: 'id',
-  }),
-  task_automation: () => ({
-    status: 'completed',
-    tasksCompleted: 8,
-    executionTimeMs: 1_200,
-  }),
-}
+import type { AgentConfig, NegotiationDecision } from './types.ts'
 
 // How many concession steps each side takes from its opening price to its
 // limit before giving up on a negotiation.
 export const NEGOTIATION_ROUNDS = 3
 
 /**
- * Generic runtime for a demo buyer or seller agent — configuration in, no
- * per-agent-pair hardcoding. One class powers every demo agent (Agent C, D,
- * E, F, ...); only the AgentConfig differs.
+ * Generic runtime for a buyer or seller agent — configuration in, no
+ * per-agent-pair hardcoding: capability matching, price policy, and the
+ * concession policy that backs the AI negotiator's guardrails (spec §9).
+ * Task execution lives in ./capabilities.
  */
 export class DemoAgentRuntime {
   constructor(public readonly config: AgentConfig) {
@@ -111,14 +83,5 @@ export class DemoAgentRuntime {
     if (goodEnough && this.checkPolicy(offeredPrice)) return { action: 'accept' }
 
     return { action: 'counter', price: counterPrice }
-  }
-
-  /** Execution Handler — "perform" the task and return a demo result. */
-  execute(capability: string): DemoTaskResult {
-    const buildResult = DEMO_RESULTS[capability]
-    if (!buildResult) {
-      return { status: 'completed', note: `No canned demo result configured for capability "${capability}".` }
-    }
-    return buildResult()
   }
 }

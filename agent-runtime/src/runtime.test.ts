@@ -3,10 +3,10 @@ import { test } from 'node:test'
 import { DemoAgentRuntime } from './runtime.ts'
 
 const sellerConfig = {
-  name: 'IndoPrice Agent',
+  name: 'Data Analyst',
   role: 'seller' as const,
-  capabilities: ['product_price_research'],
-  description: 'Researches product prices on Indonesian marketplaces.',
+  capabilities: ['data_analysis'],
+  description: 'Analyses CSV data.',
   basePrice: 0.2,
   minimumPrice: 0.15,
 }
@@ -14,7 +14,7 @@ const sellerConfig = {
 const buyerConfig = {
   name: 'Agent D',
   role: 'buyer' as const,
-  capabilities: ['product_price_research'],
+  capabilities: ['data_analysis'],
   description: 'Finds and hires agents on your behalf.',
   basePrice: 0.15,
   maxBudget: 1,
@@ -22,7 +22,7 @@ const buyerConfig = {
 
 test('matchesCapability is true only for capabilities the agent actually has', () => {
   const seller = new DemoAgentRuntime(sellerConfig)
-  assert.equal(seller.matchesCapability('product_price_research'), true)
+  assert.equal(seller.matchesCapability('data_analysis'), true)
   assert.equal(seller.matchesCapability('image_generation'), false)
 })
 
@@ -53,29 +53,6 @@ test('rejects a config where minimumPrice is above basePrice', () => {
 
 test('rejects a config where maxBudget is below basePrice', () => {
   assert.throws(() => new DemoAgentRuntime({ ...buyerConfig, maxBudget: 0.1 }))
-})
-
-test('execute returns the canned demo result for a known capability', () => {
-  const seller = new DemoAgentRuntime(sellerConfig)
-  const result = seller.execute('product_price_research')
-  assert.equal(result.status, 'completed')
-  assert.equal(result.currency, 'IDR')
-})
-
-test('execute returns a generic completed result for an unconfigured capability', () => {
-  const seller = new DemoAgentRuntime(sellerConfig)
-  const result = seller.execute('something_else')
-  assert.equal(result.status, 'completed')
-  assert.ok(typeof result.note === 'string')
-})
-
-test('execute has a canned result for each of the 4 capability templates', () => {
-  const seller = new DemoAgentRuntime(sellerConfig)
-  for (const capability of ['product_price_research', 'data_analysis', 'translation', 'task_automation']) {
-    const result = seller.execute(capability)
-    assert.equal(result.status, 'completed')
-    assert.equal('note' in result, false, `"${capability}" should have a real canned result, not the fallback`)
-  }
 })
 
 test('reproduces the §11 example: seller counters once, then buyer accepts', () => {

@@ -72,17 +72,16 @@ tasksRouter.post('/', async (req, res) => {
 /**
  * Step 2, after createEscrow: link the escrow. Accepted only when the chain
  * agrees — same taskHash, buyer, seller and amount — so a task can never be
- * attached to someone else's escrow or a different price.
+ * attached to someone else's escrow or a different price. That on-chain
+ * check is the proof, so no signature is needed: the buyer's browser saves a
+ * wallet prompt, and anyone can finish a link a closed tab left undone.
  */
 tasksRouter.post('/:id/escrow', async (req, res) => {
-  const auth = await verifyOwnerAuth(req)
-  if (!auth.ok) return res.status(401).json({ error: auth.error })
   const parsed = linkTaskEscrowSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'escrowId must be a number' })
 
   const task = await prisma.task.findUnique({ where: { id: req.params.id } })
   if (!task) return res.status(404).json({ error: 'Task not found' })
-  if (task.buyer !== auth.wallet.toLowerCase()) return res.status(403).json({ error: "Only the task's buyer can link it" })
   if (task.escrowId) {
     return task.escrowId === parsed.data.escrowId ? res.json(task) : res.status(409).json({ error: 'Task already linked to another escrow' })
   }

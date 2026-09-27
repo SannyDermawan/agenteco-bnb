@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import type { LocalAccount } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { taskHash } from '../../agent-runtime/src/shared/hashes.ts'
+import { hireWithTask } from '../../agent-runtime/src/tasksClient.ts'
 import { DemoAgentRuntime } from '../../agent-runtime/src/runtime.ts'
 import { RPC_URL } from '../../agent-runtime/src/network.ts'
 import { discoverAgents, registerOrSyncSelf } from '../../agent-runtime/src/registryClient.ts'
@@ -14,7 +13,7 @@ import {
 } from '../../agent-runtime/src/negotiationClient.ts'
 import { attachEscrowToOrder, listOrdersForAgent } from '../../agent-runtime/src/ordersClient.ts'
 import { createOnchainClients } from '../../agent-runtime/src/onchain/clients.ts'
-import { acceptAndSettle, createAndFundEscrow, getEscrowStatus } from '../../agent-runtime/src/onchain/escrow.ts'
+import { acceptAndSettle, getEscrowStatus } from '../../agent-runtime/src/onchain/escrow.ts'
 import { discoverAndNegotiate } from './negotiate.ts'
 import { buyerAgentConfig } from './config.ts'
 
@@ -67,17 +66,16 @@ async function handleAgreedOrders(
     }
 
     console.log(`[${runtime.config.name}] order ${order.id}: funding escrow for ${order.price} USDT…`)
-    const hash = taskHash({
+    // Store the task, escrow its hash, link the two (spec §5).
+    const { escrowId, task } = await hireWithTask(API_URL, onchain, {
       capability: order.capability,
-      brief: {},
+      brief: runtime.config.taskBrief,
+      criteria: runtime.config.acceptanceCriteria,
       price: order.price,
-      buyer: onchain.account.address,
       seller: seller.walletAddress,
-      nonce: randomUUID(),
     })
-    const escrowId = await createAndFundEscrow(onchain, seller.walletAddress, order.price, hash)
     await attachEscrowToOrder(API_URL, account, order.id, escrowId.toString())
-    console.log(`[${runtime.config.name}] order ${order.id}: funded as escrow #${escrowId}.`)
+    console.log(`[${runtime.config.name}] order ${order.id}: funded as escrow #${escrowId} (task ${task.taskHash.slice(0, 10)}…).`)
   }
 }
 
