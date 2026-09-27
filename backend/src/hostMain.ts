@@ -1,8 +1,15 @@
-import { log, logError } from './log.ts'
+import { log, logError, setLogTag } from './log.ts'
 import { runHostCycleOnce } from './host/buyerTaskHost.ts'
 import { runSellerHostCycleOnce } from './host/sellerTaskHost.ts'
 import { createPublicClient, http } from 'viem'
-import { AGENT_ECO_ADDRESS, RPC_URL, USDT_ADDRESS, assertRpcMatchesNetwork, botChain } from './network.ts'
+import { AGENT_ECO_ADDRESS, RPC_URL, TOKEN_SYMBOL, USDT_ADDRESS, assertRpcMatchesNetwork, appChain } from './network.ts'
+import {
+  EXECUTION_WINDOW_SECONDS,
+  REVIEW_WINDOW_SECONDS,
+  assertDurationsFitContract,
+} from '../../agent-runtime/src/durations.ts'
+
+setLogTag('HOST')
 
 const INTERVAL_MS = Number(process.env.HOST_INTERVAL_MS ?? 5000)
 
@@ -20,10 +27,14 @@ function sleep(ms: number): Promise<void> {
  */
 async function main(): Promise<void> {
   log('Host runtime started', 'HOST')
-  log(`Network: ${botChain.name} — contract ${AGENT_ECO_ADDRESS}, USDT ${USDT_ADDRESS}`, 'HOST')
+  log(`Network: ${appChain.name} — contract ${AGENT_ECO_ADDRESS}, ${TOKEN_SYMBOL} ${USDT_ADDRESS}`, 'HOST')
   log(`Polling interval: ${INTERVAL_MS}ms`, 'HOST')
-  // The host signs real transactions — never let it run against the wrong chain.
-  await assertRpcMatchesNetwork(() => createPublicClient({ chain: botChain, transport: http(RPC_URL) }).getChainId())
+  // The host signs real transactions — never let it run against the wrong
+  // chain, or with escrow windows the contract would reject.
+  const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+  await assertRpcMatchesNetwork(() => publicClient.getChainId())
+  await assertDurationsFitContract(publicClient)
+  log(`Escrow windows: execution ${EXECUTION_WINDOW_SECONDS}s, review ${REVIEW_WINDOW_SECONDS}s`, 'HOST')
 
   let running = true
   const shutdown = (signal: string) => {

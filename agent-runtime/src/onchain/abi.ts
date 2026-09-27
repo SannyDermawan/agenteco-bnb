@@ -1,8 +1,8 @@
 // Deployment addresses come from ../network.ts (NETWORK + env), not hardcoded.
 export { AGENT_ECO_ADDRESS, USDT_ADDRESS } from '../network.ts'
 
-export const EXECUTION_WINDOW_SECONDS = BigInt(24 * 60 * 60) // 24h
-export const REVIEW_WINDOW_SECONDS = BigInt(48 * 60 * 60) // 48h
+// Escrow windows come from env, validated against the contract at startup.
+export { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS } from '../durations.ts'
 
 // The full AgentEco.sol ABI, generated from the Foundry build (scripts/gen-abi.mjs).
 export { AGENT_ECO_ABI, MOCK_USDT_ABI } from '../shared/abi.generated.ts'
