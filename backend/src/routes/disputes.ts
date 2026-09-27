@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { createPublicClient, http } from 'viem'
+import { createPublicClient } from 'viem'
 import { prisma } from '../db.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, appChain } from '../network.ts'
+import { AGENT_ECO_ADDRESS, appChain, appTransport } from '../network.ts'
 import { verifyOwnerAuth } from '../auth.ts'
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
 import { buildRationalePreimage, hashPreimage, textHash } from '../../../agent-runtime/src/shared/hashes.ts'
@@ -9,7 +9,7 @@ import { disputeReasonSchema, disputeResolutionSchema, disputeResponseSchema } f
 
 export const disputesRouter = Router()
 
-const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 
 // AgentEco.sol OrderStatus
 const DISPUTED = 4

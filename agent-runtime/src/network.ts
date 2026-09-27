@@ -1,4 +1,4 @@
-import { defineChain, isAddress, type Address } from 'viem'
+import { defineChain, fallback, http, isAddress, type Address, type Transport } from 'viem'
 
 /**
  * The one place the Node side (backend API, host, keeper, and the standalone
@@ -19,6 +19,8 @@ interface NetworkPreset {
   chainId: number
   name: string
   rpcUrl: string
+  /** Tried in order when rpcUrl fails or times out (not for eth_getLogs-heavy scans, which need rpcUrl). */
+  fallbackRpcUrls?: string[]
   explorerUrl: string
   explorerName: string
   nativeSymbol: string
@@ -48,6 +50,9 @@ const PRESETS: Record<NetworkName, NetworkPreset> = {
     // ("limit exceeded" even for 1,000 blocks), and escrow discovery needs it.
     // PublicNode allows 50,000 blocks per call. Override with RPC_URL.
     rpcUrl: 'https://bsc-testnet-rpc.publicnode.com',
+    // Official nodes as a fallback: they refuse large eth_getLogs, but reads,
+    // transactions and receipts keep working while PublicNode is down.
+    fallbackRpcUrls: ['https://bsc-testnet-dataseed.bnbchain.org', 'https://data-seed-prebsc-1-s1.bnbchain.org:8545'],
     explorerUrl: 'https://testnet.bscscan.com',
     explorerName: 'BscScan Testnet',
     nativeSymbol: 'tBNB',
@@ -133,6 +138,27 @@ const preset = PRESETS[NETWORK]
 
 /** Overridable (e.g. a private RPC provider); defaults to the network's public RPC. */
 export const RPC_URL = env('RPC_URL') ?? preset.rpcUrl
+/**
+ * RPC_URL first, then fallbacks (RPC_FALLBACK_URLS, comma-separated, overrides
+ * the preset; set it to "none" for no fallback). A public RPC going quiet for
+ * a few minutes is enough to miss a 120 s accept deadline, so every process
+ * fails over instead of waiting.
+ */
+export const RPC_URLS: string[] = [
+  RPC_URL,
+  ...(env('RPC_FALLBACK_URLS')?.toLowerCase() === 'none'
+    ? []
+    : (env('RPC_FALLBACK_URLS')?.split(',').map((u) => u.trim()).filter(Boolean) ?? preset.fallbackRpcUrls ?? [])),
+].filter((url, i, all) => all.indexOf(url) === i)
+
+/** Per-request timeout before failing over to the next RPC. */
+export const RPC_TIMEOUT_MS = 10_000
+
+/** viem transport over RPC_URLS: the primary, then each fallback on error or timeout. */
+export function appTransport(): Transport {
+  const transports = RPC_URLS.map((url) => http(url, { timeout: RPC_TIMEOUT_MS, retryCount: 1 }))
+  return transports.length === 1 ? transports[0] : fallback(transports)
+}
 export const EXPLORER_URL = preset.explorerUrl
 export const NATIVE_SYMBOL = preset.nativeSymbol
 export const TOKEN_SYMBOL = preset.tokenSymbol
@@ -151,7 +177,7 @@ export const appChain = defineChain({
   id: preset.chainId,
   name: preset.name,
   nativeCurrency: { name: preset.nativeSymbol, symbol: preset.nativeSymbol, decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
+  rpcUrls: { default: { http: RPC_URLS } },
   blockExplorers: { default: { name: preset.explorerName, url: preset.explorerUrl } },
   contracts: preset.multicall3 ? { multicall3: { address: preset.multicall3 } } : undefined,
   testnet: preset.testnet,

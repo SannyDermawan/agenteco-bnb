@@ -1,14 +1,14 @@
 import { Router } from 'express'
-import { createPublicClient, http } from 'viem'
+import { createPublicClient } from 'viem'
 import { z } from 'zod'
 import { prisma } from '../db.ts'
-import { RPC_URL, appChain } from '../network.ts'
+import { appChain, appTransport } from '../network.ts'
 import { ratingSummaries, recordRatingsFromTx } from '../ratings.ts'
 
 export const ratingsRouter = Router()
 export const verificationsRouter = Router()
 
-const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 
 /**

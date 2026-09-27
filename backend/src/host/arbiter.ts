@@ -1,4 +1,4 @@
-import { createPublicClient, http, isHex } from 'viem'
+import { createPublicClient, isHex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import {
   createOnchainClients,
@@ -17,7 +17,7 @@ import { ARBITER_AUTO_MIN_CONFIDENCE } from '../ai/config.ts'
 import { prisma } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, appChain } from '../network.ts'
+import { AGENT_ECO_ADDRESS, RPC_URL, appChain, appTransport } from '../network.ts'
 
 /**
  * The AI arbiter (spec §11 steps 3–5), run by the host process: it already has
@@ -38,7 +38,7 @@ const SETTLED = 5
 const REFUNDED = 6
 const ZERO_HASH = `0x${'0'.repeat(64)}`
 
-const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 // The runtime's read helpers are typed against its own viem copy.
 const chain = { publicClient } as unknown as Pick<OnchainClients, 'publicClient'>
 

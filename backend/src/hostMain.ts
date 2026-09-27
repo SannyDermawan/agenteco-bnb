@@ -3,8 +3,8 @@ import { runHostCycleOnce } from './host/buyerTaskHost.ts'
 import { runSellerHostCycleOnce } from './host/sellerTaskHost.ts'
 import { initArbiter, runArbiterCycleOnce } from './host/arbiter.ts'
 import { indexRecentRatings } from './ratings.ts'
-import { createPublicClient, http } from 'viem'
-import { AGENT_ECO_ADDRESS, RPC_URL, TOKEN_SYMBOL, USDT_ADDRESS, assertRpcMatchesNetwork, appChain } from './network.ts'
+import { createPublicClient } from 'viem'
+import { AGENT_ECO_ADDRESS, TOKEN_SYMBOL, USDT_ADDRESS, assertRpcMatchesNetwork, appChain, appTransport } from './network.ts'
 import {
   EXECUTION_WINDOW_SECONDS,
   REVIEW_WINDOW_SECONDS,
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   log(`Polling interval: ${INTERVAL_MS}ms`, 'HOST')
   // The host signs real transactions — never let it run against the wrong
   // chain, or with escrow windows the contract would reject.
-  const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+  const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
   await assertRpcMatchesNetwork(() => publicClient.getChainId())
   await assertDurationsFitContract(publicClient)
   log(`Escrow windows: execution ${EXECUTION_WINDOW_SECONDS}s, review ${REVIEW_WINDOW_SECONDS}s`, 'HOST')

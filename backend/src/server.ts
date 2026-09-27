@@ -9,8 +9,8 @@ import { disputesRouter } from './routes/disputes.ts'
 import { tasksRouter } from './routes/tasks.ts'
 import { ratingsRouter, verificationsRouter } from './routes/ratings.ts'
 import { log, logError } from './log.ts'
-import { createPublicClient, http } from 'viem'
-import { AGENT_ECO_ADDRESS, NETWORK, RPC_URL, assertRpcMatchesNetwork, appChain } from './network.ts'
+import { createPublicClient } from 'viem'
+import { AGENT_ECO_ADDRESS, NETWORK, assertRpcMatchesNetwork, appChain, appTransport } from './network.ts'
 
 // PORT is what hosting platforms (Railway, Render, …) inject; API_PORT is the local-dev name.
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 4000)
@@ -39,7 +39,7 @@ app.use('/ratings', ratingsRouter)
 app.use('/verifications', verificationsRouter)
 
 // Refuse to serve a mainnet frontend from a testnet RPC (or vice versa).
-assertRpcMatchesNetwork(() => createPublicClient({ chain: appChain, transport: http(RPC_URL) }).getChainId()).catch((error) => {
+assertRpcMatchesNetwork(() => createPublicClient({ chain: appChain, transport: appTransport() }).getChainId()).catch((error) => {
   logError('Network check failed', error, 'API')
   process.exit(1)
 })

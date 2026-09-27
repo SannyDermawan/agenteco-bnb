@@ -1,19 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import { Router } from 'express'
-import { createPublicClient, http, parseUnits } from 'viem'
+import { createPublicClient, parseUnits } from 'viem'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../db.ts'
 import { verifyOwnerAuth } from '../auth.ts'
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
 import { ERC20_ABI } from '../../../agent-runtime/src/onchain/abi.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, USDT_ADDRESS, appChain } from '../network.ts'
+import { AGENT_ECO_ADDRESS, USDT_ADDRESS, appChain, appTransport } from '../network.ts'
 import { buildTaskPreimage, canonicalize, hashPreimage, normalizePrice } from '../../../agent-runtime/src/shared/hashes.ts'
 import { CAPABILITIES } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
 import { createTaskSchema, linkTaskEscrowSchema } from '../schemas/task.ts'
 
 export const tasksRouter = Router()
 
-const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 
 /**
  * Step 1 of every hire (spec §5): store the task before createEscrow. The

@@ -28,6 +28,8 @@ interface NetworkPreset {
   /** Short label for the top bar badge. */
   label: string
   rpcUrl: string
+  /** Tried when rpcUrl fails — mirrors agent-runtime/src/network.ts. */
+  fallbackRpcUrls?: string[]
   explorerUrl: string
   explorerName: string
   nativeSymbol: string
@@ -60,6 +62,7 @@ const PRESETS: Record<NetworkName, NetworkPreset> = {
     // PublicNode, not the official data-seed nodes: those reject eth_getLogs,
     // which every escrow/dispute scan here needs. 50,000 blocks per call.
     rpcUrl: 'https://bsc-testnet-rpc.publicnode.com',
+    fallbackRpcUrls: ['https://bsc-testnet-dataseed.bnbchain.org', 'https://data-seed-prebsc-1-s1.bnbchain.org:8545'],
     explorerUrl: 'https://testnet.bscscan.com',
     explorerName: 'BscScan Testnet',
     nativeSymbol: 'tBNB',
@@ -172,6 +175,13 @@ export const CHAIN_NAME = preset.name
 export const NETWORK_LABEL = preset.label
 export const IS_TESTNET = preset.testnet
 export const RPC_URL = clean(process.env.NEXT_PUBLIC_RPC_URL) ?? preset.rpcUrl
+/** RPC_URL, then fallbacks (NEXT_PUBLIC_RPC_FALLBACK_URLS, comma-separated, or "none"). */
+export const RPC_URLS: string[] = [
+  RPC_URL,
+  ...(clean(process.env.NEXT_PUBLIC_RPC_FALLBACK_URLS)?.toLowerCase() === 'none'
+    ? []
+    : (clean(process.env.NEXT_PUBLIC_RPC_FALLBACK_URLS)?.split(',').map((u) => u.trim()).filter(Boolean) ?? preset.fallbackRpcUrls ?? [])),
+].filter((url, i, all) => all.indexOf(url) === i)
 export const EXPLORER_URL = preset.explorerUrl
 /** Block span per eth_getLogs call for this network's RPC. */
 export const LOG_RANGE = preset.logRange

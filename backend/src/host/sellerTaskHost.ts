@@ -1,5 +1,5 @@
 import { privateKeyToAccount } from 'viem/accounts'
-import { createPublicClient, http, type Address, type PublicClient } from 'viem'
+import { createPublicClient, type Address, type PublicClient } from 'viem'
 import {
   DemoAgentRuntime,
   respondToNegotiation,
@@ -33,7 +33,7 @@ import { prismaWithAgentKey } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
 import { API_URL, refundLeftover } from './buyerTaskHost.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, TOKEN_SYMBOL, appChain } from '../network.ts'
+import { AGENT_ECO_ADDRESS, RPC_URL, TOKEN_SYMBOL, appChain, appTransport } from '../network.ts'
 import { readAllEscrows, type EscrowBasic } from '../../../agent-runtime/src/onchain/escrowIndex.ts'
 
 // AgentEco.sol OrderStatus enum ordering.
@@ -84,7 +84,7 @@ const missingResultLogged = new Set<bigint>()
 
 const ZERO_HASH = `0x${'0'.repeat(64)}`
 
-const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 
 async function hasPublishedResult(escrowId: bigint): Promise<boolean> {
   const res = await fetch(`${API_URL}/escrow-results/${escrowId}`)
