@@ -1,0 +1,66 @@
+import type { LocalAccount } from 'viem'
+import { buildAuthHeaders } from './authHeaders.ts'
+
+/** A dispute's off-chain record (backend/prisma: Dispute). Every text re-hashes to its on-chain hash. */
+export interface RegistryDispute {
+  id: string
+  escrowId: string
+  buyerWallet: string
+  reason: string
+  reasonHash: string
+  sellerResponse: string | null
+  responseHash: string | null
+  responseSource: string | null
+  respondedAt: string | null
+  recVerdict: 'seller' | 'buyer' | null
+  recConfidence: number | null
+  recRationale: string | null
+  recProvider: string | null
+  recModel: string | null
+  recommendedAt: string | null
+  recUnavailable: boolean
+  overrideDeadline: string | null
+  resolution: 'ai-auto' | 'arbiter-manual' | 'timeout' | null
+  releasedToSeller: boolean | null
+  rationalePreimage: string | null
+  rationaleHash: string | null
+  resolutionTx: string | null
+  resolvedAt: string | null
+}
+
+async function parseOrThrow<T>(res: Response, action: string): Promise<T> {
+  if (!res.ok) throw new Error(`${action} failed (${res.status}): ${await res.text()}`)
+  return res.json() as Promise<T>
+}
+
+export async function getDispute(apiUrl: string, escrowId: string): Promise<RegistryDispute | null> {
+  const res = await fetch(`${apiUrl}/disputes/${escrowId}`)
+  if (res.status === 404) return null
+  return parseOrThrow(res, 'Reading dispute')
+}
+
+/** Buyer: the reason text behind raiseDispute's reasonHash — must be the exact hashed string. */
+export async function submitDisputeReason(apiUrl: string, buyer: LocalAccount, escrowId: string, reason: string): Promise<RegistryDispute> {
+  const res = await fetch(`${apiUrl}/disputes/${escrowId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...(await buildAuthHeaders(buyer)) },
+    body: JSON.stringify({ reason }),
+  })
+  return parseOrThrow(res, 'Saving dispute reason')
+}
+
+/** Seller: the response text behind submitDisputeResponse's responseHash. */
+export async function submitDisputeResponseText(
+  apiUrl: string,
+  seller: LocalAccount,
+  escrowId: string,
+  response: string,
+  source: 'ai' | 'manual' | 'api'
+): Promise<RegistryDispute> {
+  const res = await fetch(`${apiUrl}/disputes/${escrowId}/response`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await buildAuthHeaders(seller)) },
+    body: JSON.stringify({ response, source }),
+  })
+  return parseOrThrow(res, 'Saving dispute response')
+}

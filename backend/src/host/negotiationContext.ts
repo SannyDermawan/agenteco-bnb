@@ -1,6 +1,7 @@
 import type { Address, PublicClient } from 'viem'
 import { discoverAgents, type Negotiation } from '../../../agent-runtime/src/index.ts'
 import { getOnchainReputation } from './reputation.ts'
+import { ratingSummaries } from '../ratings.ts'
 
 export interface NegotiationExtras {
   history: { side: 'buyer' | 'seller'; action: string; price: number | null }[]
@@ -32,8 +33,12 @@ export async function buildNegotiationExtras(
   let seller: NegotiationExtras['seller'] = null
   if (opts.sellerWallet) {
     try {
-      const rep = await getOnchainReputation(publicClient, opts.sellerWallet as Address)
-      seller = { stars: rep.avgRatingScore === null ? null : rep.avgRatingScore / 20, completedJobs: rep.completedJobs }
+      const [rep, [rating]] = await Promise.all([
+        getOnchainReputation(publicClient, opts.sellerWallet as Address),
+        ratingSummaries([opts.sellerWallet]),
+      ])
+      // Same displayed rating as the marketplace: same-owner ratings excluded.
+      seller = { stars: rating?.avgScore == null ? null : rating.avgScore / 20, completedJobs: rep.completedJobs }
     } catch {
       seller = null
     }

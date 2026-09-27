@@ -30,6 +30,13 @@ export {
   markDelivered as markOnchainDelivered,
   acceptAndSettle as acceptAndSettleOnchain,
   getEscrowStatus,
+  raiseDispute as raiseDisputeOnchain,
+  submitDisputeResponse as submitDisputeResponseOnchain,
+  rateSeller as rateSellerOnchain,
+  resolveDispute as resolveDisputeOnchain,
+  getEscrowDisputeInfo,
+  getEscrowHashes,
+  getEscrowTimestamps,
 } from './onchain/escrow.ts'
 export { onChainStatusLabel, ON_CHAIN_STATUS } from './onchain/abi.ts'
 export type { OnChainStatus } from './onchain/abi.ts'
@@ -37,3 +44,5 @@ export { allEscrowIds, readAllEscrows, readEscrowBasics } from './onchain/escrow
 export type { EscrowBasic } from './onchain/escrowIndex.ts'
 export { publishEscrowResult } from './resultsClient.ts'
 export type { EscrowResult } from './resultsClient.ts'
+export { getDispute, submitDisputeReason, submitDisputeResponseText } from './disputesClient.ts'
+export type { RegistryDispute } from './disputesClient.ts'

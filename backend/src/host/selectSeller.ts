@@ -1,5 +1,6 @@
 import type { DiscoveredAgent, OnchainClients } from '../../../agent-runtime/src/index.ts'
 import { getOnchainReputation } from './reputation.ts'
+import { ratingSummaries } from '../ratings.ts'
 
 export interface SellerFilters {
   minSuccessRate: number | null
@@ -16,7 +17,8 @@ export interface SellerFilters {
  * buyer can afford to open a negotiation with (see `checkPolicy`); if that one
  * walks away, the host tries the next. "Custom" additionally requires live on-chain reputation
  * meeting the buyer's thresholds — reputation is never trusted from the
- * registry row, only from AgentEco.sol itself.
+ * registry row: jobs and success come from AgentEco.sol, and the rating is
+ * the indexed average without same-owner ratings (spec §10.3).
  */
 export async function selectSeller(
   onchain: OnchainClients,
@@ -30,6 +32,8 @@ export async function selectSeller(
 
   let qualified = affordable
   if (hasCustomFilter) {
+    const wallets = affordable.map((c) => c.walletAddress).filter((w): w is string => !!w)
+    const ratings = new Map((await ratingSummaries(wallets)).map((r) => [r.seller, r.avgScore]))
     const checked = await Promise.all(
       affordable.map(async (candidate) => {
         if (!candidate.walletAddress) return null
@@ -37,8 +41,8 @@ export async function selectSeller(
         const okSuccess = filters.minSuccessRate === null || rep.successRatePct >= filters.minSuccessRate
         const okCompleted = filters.minCompletedJobs === null || rep.completedJobs >= filters.minCompletedJobs
         // A minimum rating excludes sellers nobody has rated yet.
-        const okRating =
-          filters.minReputation === null || (rep.avgRatingScore !== null && rep.avgRatingScore >= filters.minReputation)
+        const avgScore = ratings.get(candidate.walletAddress.toLowerCase()) ?? null
+        const okRating = filters.minReputation === null || (avgScore !== null && avgScore >= filters.minReputation)
         return okSuccess && okCompleted && okRating ? candidate : null
       })
     )
