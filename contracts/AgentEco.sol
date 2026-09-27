@@ -7,37 +7,44 @@ pragma solidity ^0.8.24;
  *
  * Core flow:
  *
- * CREATED
- *    ↓ fundEscrow (buyer)
+ * CREATED                                    (createEscrow commits taskHash)
+ *    ↓ fundEscrow (buyer)                    [starts acceptTimeout]
  * FUNDED
- *    ↓ startExecution (seller)              [starts executionWindow]
+ *    ↓ startExecution (seller, before acceptDeadline) [starts executionWindow]
+ *    ↓ or refundEscrow (buyer)               → REFUNDED
+ *    ↓ or claimAcceptTimeout (anyone, after acceptDeadline) → REFUNDED
  * EXECUTING
  *    ↓ markDelivered (seller)                [starts reviewWindow]
  *    ↓ or claimExecutionTimeout (anyone, after executionDeadline) → REFUNDED
  * DELIVERED
  *    ↓ acceptAndSettle (buyer)               → SETTLED
- *    ↓ or raiseDispute (buyer, within reviewWindow) → DISPUTED
+ *    ↓ or raiseDispute (buyer, within reviewWindow) → DISPUTED [starts disputeTimeout]
  *    ↓ or finalizeAfterReviewWindow (anyone, after reviewDeadline) → SETTLED
  * DISPUTED
- *    ↓ resolveDisputeForSeller (arbiter)     → SETTLED
- *    ↓ resolveDisputeForBuyer (arbiter)      → REFUNDED
+ *    ↓ submitDisputeResponse (seller, once, before disputeDeadline)
+ *    ↓ resolveDisputeForSeller (arbiter, before disputeDeadline) → SETTLED
+ *    ↓ resolveDisputeForBuyer (arbiter, before disputeDeadline)  → REFUNDED
+ *    ↓ or claimDisputeTimeout (anyone, after disputeDeadline)     → REFUNDED
+ * SETTLED / REFUNDED (final)
+ *    ↓ rateSeller (buyer, once, only if a result was ever delivered)
  *
- * Discovery, negotiation, agent metadata, and task execution
- * remain off-chain.
+ * Every non-final status has an exit that needs nobody's cooperation, so
+ * no escrow can get stuck.
+ *
+ * Discovery, negotiation, agent metadata, and task execution remain
+ * off-chain. Long texts (task brief, dispute reason, seller response,
+ * arbiter rationale) live off-chain too; only their keccak256 hashes are
+ * committed here, so anyone can check the API's text against the chain.
  *
  * This contract handles the economic state:
- * - escrow funding
- * - delivery confirmation
- * - settlement
- * - refund before execution
- * - execution timeout (seller fails to deliver in time)
- * - post-delivery review window + dispute resolution
- * - on-chain reputation (completed / failed jobs, volume, success rate)
+ * - escrow funding, delivery confirmation, settlement
+ * - refund before execution, accept timeout, execution timeout
+ * - post-delivery review window + dispute resolution with a deadline
+ * - on-chain reputation (completed / failed jobs, volume, ratings)
  *
- * Compile with the optimizer enabled (runs = 200) and viaIR = true.
- * Recommended as a safety net even with the split getters below, since
- * any future addition to Escrow/Reputation can reintroduce a
- * "stack too deep" error under the legacy codegen pipeline.
+ * Compiled with the optimizer (runs = 200) and viaIR off. The escrow
+ * struct is read through several small getters to stay clear of the
+ * legacy pipeline's "stack too deep" limit.
  */
 contract AgentEco {
 
@@ -60,8 +67,20 @@ contract AgentEco {
      */
     address public arbiter;
 
-    uint256 public constant MIN_WINDOW = 1 hours;
     uint256 public constant MAX_WINDOW = 90 days;
+
+    /**
+     * Shortest execution / review window createEscrow accepts. Set at
+     * deploy time: short for a demo deployment (minutes), an hour or more
+     * in production.
+     */
+    uint256 public immutable minWindow;
+
+    /// Seconds the seller has, after funding, to call startExecution.
+    uint256 public immutable acceptTimeout;
+
+    /// Seconds the arbiter has, after a dispute is raised, to resolve it.
+    uint256 public immutable disputeTimeout;
 
     // =============================================================
     // ENUMS
@@ -123,12 +142,39 @@ contract AgentEco {
          * The actual result can remain off-chain.
          */
         bytes32 resultHash;
+
+        /// keccak256 of the task preimage (brief + criteria + price + parties + nonce).
+        bytes32 taskHash;
+
+        /// fundedAt + acceptTimeout (0 until funded)
+        uint256 acceptDeadline;
+
+        /// When the buyer raised a dispute (0 if never disputed)
+        uint256 disputedAt;
+
+        /// disputedAt + disputeTimeout (0 if never disputed)
+        uint256 disputeDeadline;
+
+        /// keccak256 of the buyer's dispute reason text
+        bytes32 disputeReasonHash;
+
+        /// keccak256 of the seller's response text (0 = no response yet)
+        bytes32 disputeResponseHash;
+
+        /// keccak256 of the arbiter's rationale object
+        bytes32 resolutionHash;
+
+        /// Whether the buyer has already rated the seller for this escrow
+        bool rated;
     }
 
     struct Reputation {
         uint256 completedJobs;
         uint256 failedJobs;
         uint256 totalVolumeSettled;
+        /// Sum of buyer rating scores, each 1..100
+        uint256 ratingSum;
+        uint256 ratingCount;
     }
 
     // =============================================================
@@ -155,7 +201,8 @@ contract AgentEco {
         uint256 indexed escrowId,
         address indexed buyer,
         address indexed seller,
-        uint256 amount
+        uint256 amount,
+        bytes32 taskHash
     );
 
     event EscrowFunded(
@@ -196,13 +243,40 @@ contract AgentEco {
 
     event DisputeRaised(
         uint256 indexed escrowId,
-        address indexed buyer
+        address indexed buyer,
+        bytes32 reasonHash
     );
 
     event DisputeResolved(
         uint256 indexed escrowId,
         address indexed arbiter,
-        bool releasedToSeller
+        bool releasedToSeller,
+        bytes32 rationaleHash
+    );
+
+    event DisputeResponseSubmitted(
+        uint256 indexed escrowId,
+        address indexed seller,
+        bytes32 responseHash
+    );
+
+    event AcceptTimedOut(
+        uint256 indexed escrowId,
+        address indexed buyer,
+        uint256 amount
+    );
+
+    event DisputeTimedOut(
+        uint256 indexed escrowId,
+        address indexed buyer,
+        uint256 amount
+    );
+
+    event SellerRated(
+        uint256 indexed escrowId,
+        address indexed seller,
+        address indexed buyer,
+        uint8 score
     );
 
     event ReviewFinalized(
@@ -254,12 +328,30 @@ contract AgentEco {
     // CONSTRUCTOR
     // =============================================================
 
-    constructor(address usdtToken, address arbiter_) {
+    constructor(
+        address usdtToken,
+        address arbiter_,
+        uint256 minWindow_,
+        uint256 acceptTimeout_,
+        uint256 disputeTimeout_
+    ) {
         require(usdtToken != address(0), "Invalid USDT address");
         require(arbiter_ != address(0), "Invalid arbiter");
+        require(minWindow_ > 0 && minWindow_ <= MAX_WINDOW, "Invalid min window");
+        require(
+            acceptTimeout_ >= minWindow_ && acceptTimeout_ <= MAX_WINDOW,
+            "Invalid accept timeout"
+        );
+        require(
+            disputeTimeout_ >= minWindow_ && disputeTimeout_ <= MAX_WINDOW,
+            "Invalid dispute timeout"
+        );
 
         USDT = usdtToken;
         arbiter = arbiter_;
+        minWindow = minWindow_;
+        acceptTimeout = acceptTimeout_;
+        disputeTimeout = disputeTimeout_;
     }
 
     // =============================================================
@@ -297,17 +389,22 @@ contract AgentEco {
      * agreed price in USDT base units.
      *
      * Example:
-     * 0.18 USDT with 6 decimals = 180000
+     * 0.18 USDT with 18 decimals = 180000000000000000
      *
      * executionWindow / reviewWindow:
      * negotiated off-chain "delivery conditions", in seconds.
-     * Bounded to [MIN_WINDOW, MAX_WINDOW] to avoid degenerate values.
+     * Bounded to [minWindow, MAX_WINDOW] to avoid degenerate values.
+     *
+     * taskHash:
+     * keccak256 of the task preimage stored off-chain (brief, criteria,
+     * price, parties, nonce). Required, so every job's terms are pinned.
      */
     function createEscrow(
         address seller,
         uint256 amount,
         uint256 executionWindow,
-        uint256 reviewWindow
+        uint256 reviewWindow,
+        bytes32 taskHash
     )
         external
         returns (uint256)
@@ -328,13 +425,18 @@ contract AgentEco {
         );
 
         require(
-            executionWindow >= MIN_WINDOW && executionWindow <= MAX_WINDOW,
+            executionWindow >= minWindow && executionWindow <= MAX_WINDOW,
             "Invalid execution window"
         );
 
         require(
-            reviewWindow >= MIN_WINDOW && reviewWindow <= MAX_WINDOW,
+            reviewWindow >= minWindow && reviewWindow <= MAX_WINDOW,
             "Invalid review window"
+        );
+
+        require(
+            taskHash != bytes32(0),
+            "Task hash required"
         );
 
         uint256 escrowId = nextEscrowId;
@@ -350,12 +452,14 @@ contract AgentEco {
         escrow.createdAt = block.timestamp;
         escrow.executionWindow = executionWindow;
         escrow.reviewWindow = reviewWindow;
+        escrow.taskHash = taskHash;
 
         emit EscrowCreated(
             escrowId,
             msg.sender,
             seller,
-            amount
+            amount,
+            taskHash
         );
 
         return escrowId;
@@ -390,15 +494,16 @@ contract AgentEco {
             "Invalid escrow status"
         );
 
+        escrow.status = OrderStatus.FUNDED;
+        escrow.fundedAt = block.timestamp;
+        escrow.acceptDeadline = block.timestamp + acceptTimeout;
+
         _safeTransferFrom(
             USDT,
             msg.sender,
             address(this),
             escrow.amount
         );
-
-        escrow.status = OrderStatus.FUNDED;
-        escrow.fundedAt = block.timestamp;
 
         emit EscrowFunded(
             escrowId,
@@ -415,6 +520,8 @@ contract AgentEco {
      * @notice Seller starts executing the task.
      *
      * FUNDED → EXECUTING, and starts the execution timeout clock.
+     * Must happen before acceptDeadline; after that the buyer is owed a
+     * refund through claimAcceptTimeout.
      */
     function startExecution(
         uint256 escrowId
@@ -430,6 +537,11 @@ contract AgentEco {
             "Escrow not funded"
         );
 
+        require(
+            block.timestamp <= escrow.acceptDeadline,
+            "Accept window has passed"
+        );
+
         escrow.status = OrderStatus.EXECUTING;
         escrow.executingAt = block.timestamp;
         escrow.executionDeadline = block.timestamp + escrow.executionWindow;
@@ -437,6 +549,56 @@ contract AgentEco {
         emit ExecutionStarted(
             escrowId,
             msg.sender
+        );
+    }
+
+    // =============================================================
+    // ACCEPT TIMEOUT
+    // =============================================================
+
+    /**
+     * @notice Refund the buyer if the seller never started a funded job
+     * before acceptDeadline.
+     *
+     * Callable by anyone (a keeper). The seller never accepted the job,
+     * so this does not count against its reputation.
+     */
+    function claimAcceptTimeout(
+        uint256 escrowId
+    )
+        external
+        escrowExists(escrowId)
+    {
+        Escrow storage escrow = escrows[escrowId];
+
+        require(
+            escrow.status == OrderStatus.FUNDED,
+            "Escrow not funded"
+        );
+
+        require(
+            block.timestamp > escrow.acceptDeadline,
+            "Accept window not over"
+        );
+
+        escrow.status = OrderStatus.REFUNDED;
+
+        _safeTransfer(
+            USDT,
+            escrow.buyer,
+            escrow.amount
+        );
+
+        emit AcceptTimedOut(
+            escrowId,
+            escrow.buyer,
+            escrow.amount
+        );
+
+        emit EscrowRefunded(
+            escrowId,
+            escrow.buyer,
+            escrow.amount
         );
     }
 
@@ -605,10 +767,13 @@ contract AgentEco {
 
     /**
      * @notice Buyer flags the delivered result as unsatisfactory,
-     * within the reviewWindow. Moves the escrow into arbitration.
+     * within the reviewWindow. Moves the escrow into arbitration and
+     * starts the dispute clock. reasonHash = keccak256 of the reason text
+     * the buyer submits to the API.
      */
     function raiseDispute(
-        uint256 escrowId
+        uint256 escrowId,
+        bytes32 reasonHash
     )
         external
         escrowExists(escrowId)
@@ -626,20 +791,30 @@ contract AgentEco {
             "Review window has passed"
         );
 
-        escrow.status = OrderStatus.DISPUTED;
+        require(
+            reasonHash != bytes32(0),
+            "Reason hash required"
+        );
 
-        emit DisputeRaised(escrowId, msg.sender);
+        escrow.status = OrderStatus.DISPUTED;
+        escrow.disputeReasonHash = reasonHash;
+        escrow.disputedAt = block.timestamp;
+        escrow.disputeDeadline = block.timestamp + disputeTimeout;
+
+        emit DisputeRaised(escrowId, msg.sender, reasonHash);
     }
 
     /**
-     * @notice Arbiter resolves the dispute in the seller's favor.
+     * @notice Seller answers a dispute, once, before the dispute deadline.
+     * responseHash = keccak256 of the response text sent to the API.
      */
-    function resolveDisputeForSeller(
-        uint256 escrowId
+    function submitDisputeResponse(
+        uint256 escrowId,
+        bytes32 responseHash
     )
         external
         escrowExists(escrowId)
-        onlyArbiter
+        onlySeller(escrowId)
     {
         Escrow storage escrow = escrows[escrowId];
 
@@ -648,29 +823,62 @@ contract AgentEco {
             "No active dispute"
         );
 
-        emit DisputeResolved(escrowId, msg.sender, true);
+        require(
+            block.timestamp <= escrow.disputeDeadline,
+            "Dispute window has passed"
+        );
+
+        require(
+            escrow.disputeResponseHash == bytes32(0),
+            "Response already submitted"
+        );
+
+        require(
+            responseHash != bytes32(0),
+            "Response hash required"
+        );
+
+        escrow.disputeResponseHash = responseHash;
+
+        emit DisputeResponseSubmitted(escrowId, msg.sender, responseHash);
+    }
+
+    /**
+     * @notice Arbiter resolves the dispute in the seller's favor, before
+     * the dispute deadline. rationaleHash = keccak256 of the verdict object.
+     */
+    function resolveDisputeForSeller(
+        uint256 escrowId,
+        bytes32 rationaleHash
+    )
+        external
+        escrowExists(escrowId)
+        onlyArbiter
+    {
+        Escrow storage escrow = _openDisputeForResolution(escrowId, rationaleHash);
+
+        escrow.resolutionHash = rationaleHash;
+
+        emit DisputeResolved(escrowId, msg.sender, true, rationaleHash);
 
         _settle(escrow, escrowId);
     }
 
     /**
-     * @notice Arbiter resolves the dispute in the buyer's favor.
-     * Counts as a failed job against the seller's reputation.
+     * @notice Arbiter resolves the dispute in the buyer's favor, before
+     * the dispute deadline. Counts as a failed job for the seller.
      */
     function resolveDisputeForBuyer(
-        uint256 escrowId
+        uint256 escrowId,
+        bytes32 rationaleHash
     )
         external
         escrowExists(escrowId)
         onlyArbiter
     {
-        Escrow storage escrow = escrows[escrowId];
+        Escrow storage escrow = _openDisputeForResolution(escrowId, rationaleHash);
 
-        require(
-            escrow.status == OrderStatus.DISPUTED,
-            "No active dispute"
-        );
-
+        escrow.resolutionHash = rationaleHash;
         escrow.status = OrderStatus.REFUNDED;
 
         _recordFailure(escrow.seller);
@@ -681,13 +889,133 @@ contract AgentEco {
             escrow.amount
         );
 
-        emit DisputeResolved(escrowId, msg.sender, false);
+        emit DisputeResolved(escrowId, msg.sender, false, rationaleHash);
 
         emit EscrowRefunded(
             escrowId,
             escrow.buyer,
             escrow.amount
         );
+    }
+
+    /**
+     * @notice Refund the buyer when the arbiter did not resolve a dispute
+     * before disputeDeadline. Callable by anyone (a keeper). Nobody was
+     * found at fault, so reputation does not change.
+     */
+    function claimDisputeTimeout(
+        uint256 escrowId
+    )
+        external
+        escrowExists(escrowId)
+    {
+        Escrow storage escrow = escrows[escrowId];
+
+        require(
+            escrow.status == OrderStatus.DISPUTED,
+            "No active dispute"
+        );
+
+        require(
+            block.timestamp > escrow.disputeDeadline,
+            "Dispute window not over"
+        );
+
+        escrow.status = OrderStatus.REFUNDED;
+
+        _safeTransfer(
+            USDT,
+            escrow.buyer,
+            escrow.amount
+        );
+
+        emit DisputeTimedOut(
+            escrowId,
+            escrow.buyer,
+            escrow.amount
+        );
+
+        emit EscrowRefunded(
+            escrowId,
+            escrow.buyer,
+            escrow.amount
+        );
+    }
+
+    /// Shared checks for both resolve functions.
+    function _openDisputeForResolution(
+        uint256 escrowId,
+        bytes32 rationaleHash
+    )
+        internal
+        view
+        returns (Escrow storage escrow)
+    {
+        escrow = escrows[escrowId];
+
+        require(
+            escrow.status == OrderStatus.DISPUTED,
+            "No active dispute"
+        );
+
+        require(
+            block.timestamp <= escrow.disputeDeadline,
+            "Dispute window has passed"
+        );
+
+        require(
+            rationaleHash != bytes32(0),
+            "Rationale hash required"
+        );
+    }
+
+    // =============================================================
+    // RATING
+    // =============================================================
+
+    /**
+     * @notice Buyer rates the seller once per escrow, 1..100, after the
+     * escrow is final — but only if a result was ever delivered. Escrows
+     * refunded before delivery (manual refund, accept or execution
+     * timeout) cannot be rated.
+     */
+    function rateSeller(
+        uint256 escrowId,
+        uint8 score
+    )
+        external
+        escrowExists(escrowId)
+        onlyBuyer(escrowId)
+    {
+        Escrow storage escrow = escrows[escrowId];
+
+        require(
+            score >= 1 && score <= 100,
+            "Score must be 1-100"
+        );
+
+        require(
+            escrow.status == OrderStatus.SETTLED || escrow.status == OrderStatus.REFUNDED,
+            "Escrow not final"
+        );
+
+        require(
+            escrow.deliveredAt != 0,
+            "Nothing was delivered"
+        );
+
+        require(
+            !escrow.rated,
+            "Already rated"
+        );
+
+        escrow.rated = true;
+
+        Reputation storage rep = reputations[escrow.seller];
+        rep.ratingSum += score;
+        rep.ratingCount += 1;
+
+        emit SellerRated(escrowId, escrow.seller, msg.sender, score);
     }
 
     // =============================================================
@@ -882,6 +1210,94 @@ contract AgentEco {
     }
 
     /**
+     * @notice Every hash committed for an escrow. A field is 0 until that
+     * stage has happened.
+     */
+    function getEscrowHashes(
+        uint256 escrowId
+    )
+        external
+        view
+        escrowExists(escrowId)
+        returns (
+            bytes32 taskHash,
+            bytes32 resultHash,
+            bytes32 disputeReasonHash,
+            bytes32 disputeResponseHash,
+            bytes32 resolutionHash
+        )
+    {
+        Escrow storage escrow = escrows[escrowId];
+        return (
+            escrow.taskHash,
+            escrow.resultHash,
+            escrow.disputeReasonHash,
+            escrow.disputeResponseHash,
+            escrow.resolutionHash
+        );
+    }
+
+    /**
+     * @notice Accept deadline, dispute timing, and whether the buyer has
+     * rated the seller.
+     */
+    function getEscrowDisputeInfo(
+        uint256 escrowId
+    )
+        external
+        view
+        escrowExists(escrowId)
+        returns (
+            uint256 disputedAt,
+            uint256 disputeDeadline,
+            uint256 acceptDeadline,
+            bool rated
+        )
+    {
+        Escrow storage escrow = escrows[escrowId];
+        return (
+            escrow.disputedAt,
+            escrow.disputeDeadline,
+            escrow.acceptDeadline,
+            escrow.rated
+        );
+    }
+
+    /**
+     * @notice Whether a FUNDED escrow has passed its accept deadline and
+     * is eligible for claimAcceptTimeout.
+     */
+    function isAcceptTimedOut(
+        uint256 escrowId
+    )
+        external
+        view
+        escrowExists(escrowId)
+        returns (bool)
+    {
+        Escrow storage escrow = escrows[escrowId];
+        return escrow.status == OrderStatus.FUNDED
+            && block.timestamp > escrow.acceptDeadline;
+    }
+
+    /**
+     * @notice Whether a DISPUTED escrow has passed its dispute deadline
+     * and is eligible for claimDisputeTimeout.
+     */
+    function isDisputeTimedOut(
+        uint256 escrowId
+    )
+        external
+        view
+        escrowExists(escrowId)
+        returns (bool)
+    {
+        Escrow storage escrow = escrows[escrowId];
+        return escrow.status == OrderStatus.DISPUTED
+            && block.timestamp > escrow.disputeDeadline;
+    }
+
+    /**
      * @notice Whether an EXECUTING escrow has passed its execution
      * deadline and is eligible for claimExecutionTimeout.
      */
@@ -922,10 +1338,13 @@ contract AgentEco {
     /**
      * @notice Get an agent's on-chain reputation.
      * @return completedJobs Total settled jobs (as seller).
-     * @return failedJobs Total jobs lost to timeout or dispute (as seller).
+     * @return failedJobs Total jobs lost to execution timeout or a lost dispute (as seller).
      * @return totalVolumeSettled Cumulative USDT settled (as seller), base units.
-     * @return successRateBps Success rate in basis points (10000 = 100%).
-     * Divide by 100 for a percentage, e.g. 9630 → 96.30%.
+     * @return ratingSum Sum of buyer ratings, each 1..100.
+     * @return ratingCount Number of ratings. Average = ratingSum / ratingCount.
+     *
+     * Success rate = completedJobs / (completedJobs + failedJobs), computed
+     * off-chain.
      */
     function getReputation(
         address agent
@@ -936,20 +1355,17 @@ contract AgentEco {
             uint256 completedJobs,
             uint256 failedJobs,
             uint256 totalVolumeSettled,
-            uint256 successRateBps
+            uint256 ratingSum,
+            uint256 ratingCount
         )
     {
-        Reputation memory rep = reputations[agent];
-        uint256 totalJobs = rep.completedJobs + rep.failedJobs;
-        uint256 rate = totalJobs == 0
-            ? 0
-            : (rep.completedJobs * 10000) / totalJobs;
-
+        Reputation storage rep = reputations[agent];
         return (
             rep.completedJobs,
             rep.failedJobs,
             rep.totalVolumeSettled,
-            rate
+            rep.ratingSum,
+            rep.ratingCount
         );
     }
 
