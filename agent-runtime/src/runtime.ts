@@ -31,7 +31,7 @@ const DEMO_RESULTS: Record<string, () => DemoTaskResult> = {
 
 // How many concession steps each side takes from its opening price to its
 // limit before giving up on a negotiation.
-const NEGOTIATION_ROUNDS = 3
+export const NEGOTIATION_ROUNDS = 3
 
 /**
  * Generic runtime for a demo buyer or seller agent — configuration in, no

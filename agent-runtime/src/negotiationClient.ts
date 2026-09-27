@@ -5,12 +5,22 @@ export type NegotiationSide = 'buyer' | 'seller'
 export type NegotiationAction = 'offer' | 'counter' | 'accept' | 'reject'
 export type NegotiationStatus = 'open' | 'accepted' | 'rejected'
 
+/** Why a move was made (spec §9) — the model's reason, or rule-based. */
+export interface MoveMeta {
+  reason?: string | null
+  source?: 'ai' | 'rule'
+  adjusted?: boolean
+}
+
 export interface NegotiationMessage {
   id: string
   side: NegotiationSide
   action: NegotiationAction
   price: string | null
   createdAt: string
+  reason?: string | null
+  source?: 'ai' | 'rule'
+  adjusted?: boolean
 }
 
 export interface Negotiation {
@@ -35,7 +45,7 @@ async function parseOrThrow(res: Response, action: string): Promise<any> {
 export async function openNegotiation(
   apiUrl: string,
   buyerAccount: LocalAccount,
-  input: { buyerAgentId: string; sellerAgentId: string; capability: string; price: number }
+  input: { buyerAgentId: string; sellerAgentId: string; capability: string; price: number } & MoveMeta
 ): Promise<Negotiation> {
   const authHeaders = await buildAuthHeaders(buyerAccount)
   const res = await fetch(`${apiUrl}/negotiations`, {
@@ -51,7 +61,7 @@ export async function respondToNegotiation(
   apiUrl: string,
   account: LocalAccount,
   negotiationId: string,
-  response: { side: NegotiationSide; action: 'counter' | 'accept' | 'reject'; price?: number }
+  response: { side: NegotiationSide; action: 'counter' | 'accept' | 'reject'; price?: number } & MoveMeta
 ): Promise<Negotiation> {
   const authHeaders = await buildAuthHeaders(account)
   const res = await fetch(`${apiUrl}/negotiations/${negotiationId}/messages`, {

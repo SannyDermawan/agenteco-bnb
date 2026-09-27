@@ -65,7 +65,9 @@ negotiationsRouter.post('/', async (req, res) => {
       buyerAgentId,
       sellerAgentId,
       capability,
-      messages: { create: [{ side: 'buyer', action: 'offer', price }] },
+      messages: {
+        create: [{ side: 'buyer', action: 'offer', price, reason: parsed.data.reason ?? null, source: parsed.data.source, adjusted: parsed.data.adjusted }],
+      },
     },
     include: messagesOrderAsc,
   })
@@ -79,7 +81,7 @@ negotiationsRouter.post('/:id/messages', async (req, res) => {
 
   const parsed = negotiationMessageSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
-  const { side, action, price } = parsed.data
+  const { side, action, price, reason, source, adjusted } = parsed.data
 
   const negotiation = await prisma.negotiation.findUnique({
     where: { id: req.params.id },
@@ -109,7 +111,7 @@ negotiationsRouter.post('/:id/messages', async (req, res) => {
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.negotiationMessage.create({
-      data: { negotiationId: negotiation.id, side, action, price: finalPrice },
+      data: { negotiationId: negotiation.id, side, action, price: finalPrice, reason: reason ?? null, source, adjusted },
     })
     const result = await tx.negotiation.update({
       where: { id: negotiation.id },
