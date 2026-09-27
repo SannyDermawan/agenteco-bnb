@@ -123,6 +123,26 @@ export function useEscrowTimestampsMulti(escrowIds: bigint[]) {
   })
 }
 
+/** [disputedAt, disputeDeadline, acceptDeadline, rated] — polled until the escrow is final and rated. */
+export function useEscrowDisputeInfo(escrowId?: bigint, live = true) {
+  return useReadContract({
+    ...contract,
+    functionName: 'getEscrowDisputeInfo',
+    args: escrowId !== undefined ? [escrowId] : undefined,
+    query: { enabled: escrowId !== undefined, refetchInterval: live ? LIVE_POLL_MS : false },
+  })
+}
+
+/** [taskHash, resultHash, disputeReasonHash, disputeResponseHash, resolutionHash]. */
+export function useEscrowHashes(escrowId?: bigint, live = true) {
+  return useReadContract({
+    ...contract,
+    functionName: 'getEscrowHashes',
+    args: escrowId !== undefined ? [escrowId] : undefined,
+    query: { enabled: escrowId !== undefined, refetchInterval: live ? LIVE_POLL_MS : false },
+  })
+}
+
 /** On-chain reputation for `address`, as a named summary (see ./reputation.ts). */
 export function useReputation(address?: `0x${string}`) {
   return useReadContract({
@@ -254,6 +274,21 @@ export function useResolveDisputeForSeller() {
 
 export function useResolveDisputeForBuyer() {
   return useHashedEscrowAction('resolveDisputeForBuyer')
+}
+
+/** Buyer: rateSeller(escrowId, score 1–100) — once, after the escrow is final and something was delivered. */
+export function useRateSeller() {
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract()
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
+
+  const write = useCallback(
+    (escrowId: bigint, score: number) => {
+      writeContract({ ...contract, functionName: 'rateSeller', args: [escrowId, score] })
+    },
+    [writeContract]
+  )
+
+  return { write, hash, isPending, isConfirming, isSuccess, error, reset }
 }
 
 export function useMarkDelivered() {

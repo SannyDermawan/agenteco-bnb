@@ -32,10 +32,26 @@ export function summarizeReputation(
   }
 }
 
+/**
+ * Stars to display: the indexed ratings without same-owner ones (spec §10.3),
+ * falling back to "no ratings" — never the raw on-chain average, which a
+ * seller could pump by rating itself.
+ */
+export function displayStars(rating: { avgScore: number | null; count: number } | null | undefined): number | null {
+  return rating && rating.count > 0 && rating.avgScore !== null ? rating.avgScore / 20 : null
+}
+
 /** "★ 4.6 · 12 jobs · 92% success", or "No ratings yet · 3 jobs · 100% success". */
-export function formatReputationLine(rep: ReputationSummary): string {
-  const stars = rep.stars === null ? 'No ratings yet' : `★ ${rep.stars.toFixed(1)}`
+export function formatReputationLine(rep: ReputationSummary, stars: number | null = null): string {
+  const starsText = stars === null ? 'No ratings yet' : `★ ${stars.toFixed(1)}`
   const jobs = `${rep.completedJobs} ${rep.completedJobs === 1 ? 'job' : 'jobs'}`
   const success = rep.successPct === null ? 'no finished jobs' : `${Math.round(rep.successPct)}% success`
-  return `${stars} · ${jobs} · ${success}`
+  return `${starsText} · ${jobs} · ${success}`
+}
+
+/** Tooltip with the contract's own numbers. */
+export function onchainRawTooltip(rep: ReputationSummary): string {
+  return rep.stars === null
+    ? 'On-chain raw: no ratings'
+    : `On-chain raw: ★ ${rep.stars.toFixed(1)} from ${rep.ratingCount} rating${rep.ratingCount === 1 ? '' : 's'} (includes same-owner ratings)`
 }

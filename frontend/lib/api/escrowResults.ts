@@ -5,6 +5,8 @@ export interface ApiEscrowResult {
   escrowId: string
   capability: string
   result: Record<string, unknown>
+  /** The exact text whose keccak256 is the on-chain resultHash. */
+  resultJson: string | null
   resultHash: string
   createdAt: string
 }

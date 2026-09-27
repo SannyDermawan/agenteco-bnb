@@ -5,8 +5,8 @@ import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { OnChainStatusBadge } from '@/components/app/OnChainStatusBadge'
 import { OnChainTimeline } from '@/components/app/OnChainTimeline'
 import { EscrowActionPanel } from '@/components/app/EscrowActionPanel'
-import { EscrowResultCard } from '@/components/app/EscrowResultCard'
-import { DisputeReasonCard } from '@/components/app/DisputeReasonCard'
+import { EscrowReviewCards } from '@/components/app/EscrowReviewCards'
+import { DeadlineCountdown } from '@/components/app/DeadlineCountdown'
 import { PageFade } from '@/components/app/PageFade'
 import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
 import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
@@ -123,6 +123,8 @@ export default function OnChainOrderPage({ params }: { params: Promise<{ escrowI
               )}
             </NeumorphicCard>
 
+            <DeadlineCountdown escrowId={escrowId} status={status} />
+
             <NeumorphicCard className="p-6">
               <h3 className="mb-3 text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">ACTIONS</h3>
               <EscrowActionPanel
@@ -135,8 +137,7 @@ export default function OnChainOrderPage({ params }: { params: Promise<{ escrowI
               />
             </NeumorphicCard>
 
-            <EscrowResultCard escrowId={escrowId} status={status} />
-            <DisputeReasonCard escrowId={escrowId} status={status} buyer={buyer} />
+            <EscrowReviewCards escrowId={escrowId} status={status} buyer={buyer} deliveredAt={timestamps.data?.[3]} />
           </div>
 
           <div className="space-y-4">

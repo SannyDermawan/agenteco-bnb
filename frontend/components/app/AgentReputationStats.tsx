@@ -1,6 +1,8 @@
 'use client'
 import { NeumorphicCard } from './NeumorphicCard'
 import { useReputation } from '@/lib/web3/hooks'
+import { displayStars, onchainRawTooltip } from '@/lib/web3/reputation'
+import { useSellerRating } from '@/lib/useSellerRating'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 /**
@@ -21,8 +23,11 @@ export function AgentReputationStats({
 
   const completedJobs = data ? data.completedJobs : fallback.completedJobs
   const successRate = data ? (data.successPct === null ? '—' : `${Math.round(data.successPct)}%`) : `${fallback.successRate}%`
-  const rating = data?.stars != null ? `★ ${data.stars.toFixed(1)}` : 'No ratings yet'
-  const ratingCount = data?.ratingCount ?? 0
+  // Displayed rating leaves same-owner ratings out; the raw on-chain one is in the tooltip.
+  const { data: summary } = useSellerRating(walletAddress)
+  const stars = displayStars(summary)
+  const rating = stars !== null ? `★ ${stars.toFixed(1)}` : 'No ratings yet'
+  const ratingCount = summary?.count ?? 0
 
   return (
     <NeumorphicCard className="grid grid-cols-2 gap-5 p-6 sm:grid-cols-4">
@@ -38,7 +43,7 @@ export function AgentReputationStats({
         <div className="text-[18px] font-semibold text-[#F5F5F7]">{successRate}</div>
         <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Success Rate</div>
       </div>
-      <div>
+      <div title={data ? onchainRawTooltip(data) : undefined}>
         <div className="text-[18px] font-semibold text-[#F5F5F7]">{rating}</div>
         <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">
           Rating{ratingCount > 0 ? ` · ${ratingCount} ${ratingCount === 1 ? 'review' : 'reviews'}` : ''}

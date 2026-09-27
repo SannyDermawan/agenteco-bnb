@@ -9,8 +9,8 @@ import { OnChainStatusBadge } from '@/components/app/OnChainStatusBadge'
 import { OrderTimeline } from '@/components/app/OrderTimeline'
 import { OnChainTimeline } from '@/components/app/OnChainTimeline'
 import { EscrowActionPanel } from '@/components/app/EscrowActionPanel'
-import { EscrowResultCard } from '@/components/app/EscrowResultCard'
-import { DisputeReasonCard } from '@/components/app/DisputeReasonCard'
+import { EscrowReviewCards } from '@/components/app/EscrowReviewCards'
+import { DeadlineCountdown } from '@/components/app/DeadlineCountdown'
 import { NegotiationDealCard, NegotiationTimeline } from '@/components/app/NegotiationTimeline'
 import { FundOrderCard } from '@/components/app/FundOrderCard'
 import { PageFade } from '@/components/app/PageFade'
@@ -74,6 +74,8 @@ function LiveEscrowMain({ escrowId }: { escrowId: bigint }) {
         )}
       </NeumorphicCard>
 
+      {status !== undefined && <DeadlineCountdown escrowId={escrowId} status={status} />}
+
       {basic.data && status !== undefined && (
         <NeumorphicCard className="p-6">
           <h3 className="mb-3 text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">ACTIONS</h3>
@@ -88,8 +90,9 @@ function LiveEscrowMain({ escrowId }: { escrowId: bigint }) {
         </NeumorphicCard>
       )}
 
-      {status !== undefined && <EscrowResultCard escrowId={escrowId} status={status} />}
-      {basic.data && status !== undefined && <DisputeReasonCard escrowId={escrowId} status={status} buyer={basic.data[0]} />}
+      {basic.data && status !== undefined && (
+        <EscrowReviewCards escrowId={escrowId} status={status} buyer={basic.data[0]} deliveredAt={timestamps.data?.[3]} />
+      )}
     </>
   )
 }

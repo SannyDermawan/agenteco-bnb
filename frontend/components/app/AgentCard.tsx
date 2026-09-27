@@ -5,7 +5,8 @@ import { AgentStatus } from './AgentStatus'
 import { BrandMarkIcon, ArrowRightIcon } from './icons'
 import type { AgentSummary } from '@/lib/agenteco-data'
 import { useReputation } from '@/lib/web3/hooks'
-import { formatReputationLine } from '@/lib/web3/reputation'
+import { displayStars, formatReputationLine, onchainRawTooltip } from '@/lib/web3/reputation'
+import { useSellerRating } from '@/lib/useSellerRating'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 import { capabilityLabel } from '@/lib/capabilityTemplates'
 
@@ -13,7 +14,8 @@ import { capabilityLabel } from '@/lib/capabilityTemplates'
  * (the contract is the source of truth) instead of the static 0s the registry mapper sets. */
 export function AgentCard({ agent }: { agent: AgentSummary }) {
   const { data } = useReputation(agent.walletAddress)
-  const reputationLine = data ? formatReputationLine(data) : 'No ratings yet · 0 jobs'
+  const { data: rating } = useSellerRating(agent.walletAddress)
+  const reputationLine = data ? formatReputationLine(data, displayStars(rating)) : 'No ratings yet · 0 jobs'
 
   return (
     <NeumorphicCard className="flex flex-col p-5">
@@ -53,7 +55,9 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
         <span className="font-semibold text-[#F5F5F7]">{agent.price.toFixed(2)} {TOKEN_SYMBOL}</span>{' '}
         <span className="text-[#8B8D96]">/ task</span>
       </div>
-      <div className="mt-1.5 text-[11.5px] text-[#8B8D96]">{reputationLine}</div>
+      <div className="mt-1.5 text-[11.5px] text-[#8B8D96]" title={data ? onchainRawTooltip(data) : undefined}>
+        {reputationLine}
+      </div>
 
       <Link
         href={`/app/agents/${agent.id}`}
