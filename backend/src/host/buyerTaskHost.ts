@@ -22,7 +22,8 @@ import { decryptAgentKey } from '../agentKeyCrypto.ts'
 import { prisma, prismaWithAgentKey } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { selectSeller } from './selectSeller.ts'
-import { RPC_URL, USDT_ADDRESS } from '../network.ts'
+import { warnIfLowGas } from '../gasWatch.ts'
+import { RPC_URL, TOKEN_SYMBOL, USDT_ADDRESS } from '../network.ts'
 
 // The host talks to the registry over HTTP like any other agent. Set
 // AGENTECO_API_URL when the API runs as a separate service (e.g. on Railway);
@@ -106,7 +107,7 @@ export async function refundLeftover(
     args: [depositorWallet, balance],
   })
   await onchain.publicClient.waitForTransactionReceipt({ hash })
-  log(`[host:${label}] ${verb} ${formatUnits(balance, decimals)} USDT to ${depositorWallet}`)
+  log(`[host:${label}] ${verb} ${formatUnits(balance, decimals)} ${TOKEN_SYMBOL} to ${depositorWallet}`)
 }
 
 // A hosted buyer opens at this fraction of the chosen seller's listed price —
@@ -158,6 +159,7 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
   const account = privateKeyToAccount(privateKey)
   const onchain = createOnchainClients(privateKey, RPC_URL)
   const depositorWallet = agentRow.depositorWallet as Address
+  await warnIfLowGas(onchain.publicClient, account.address, `hosted buyer "${agentRow.name}"`, 'hosted')
 
   const maxBudget = Number(agentRow.maxBudget)
   const allNegotiations = await listNegotiationsForAgent(API_URL, agentRow.id)
@@ -174,8 +176,8 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
     const priorOffers = countOffersBySide(negotiation, 'buyer')
     const decision = runtime.decideOnOffer(offeredPrice, priorOffers)
     log(
-      `[host:${agentRow.name}] negotiation ${negotiation.id}: incoming ${offeredPrice} USDT -> ${decision.action}` +
-        (decision.action === 'counter' ? ` (${decision.price} USDT)` : '')
+      `[host:${agentRow.name}] negotiation ${negotiation.id}: incoming ${offeredPrice} ${TOKEN_SYMBOL} -> ${decision.action}` +
+        (decision.action === 'counter' ? ` (${decision.price} ${TOKEN_SYMBOL})` : '')
     )
     await respondToNegotiation(API_URL, account, negotiation.id, {
       side: 'buyer',
@@ -209,7 +211,7 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
     }
     const openingOffer = buyerRuntimeFor(agentRow, Number(chosen.price)).config.basePrice
     log(
-      `[host:${agentRow.name}] opening negotiation with "${chosen.name}" (asks ${chosen.price} USDT) — offering ${openingOffer} USDT`
+      `[host:${agentRow.name}] opening negotiation with "${chosen.name}" (asks ${chosen.price} ${TOKEN_SYMBOL}) — offering ${openingOffer} ${TOKEN_SYMBOL}`
     )
     await openNegotiation(API_URL, account, {
       buyerAgentId: agentRow.id,
@@ -231,7 +233,7 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
       continue
     }
 
-    log(`[host:${agentRow.name}] funding escrow for ${order.price} USDT (deposit was ${agentRow.maxBudget} USDT)…`)
+    log(`[host:${agentRow.name}] funding escrow for ${order.price} ${TOKEN_SYMBOL} (deposit was ${agentRow.maxBudget} ${TOKEN_SYMBOL})…`)
     const hash = taskHash({
       capability: order.capability,
       brief: {},

@@ -1,7 +1,14 @@
-export function log(message: string, prefix = 'KEEPER'): void {
+// Each process (API, host, keeper) tags its own lines; set once at startup.
+let processTag = 'KEEPER'
+
+export function setLogTag(tag: string): void {
+  processTag = tag
+}
+
+export function log(message: string, prefix = processTag): void {
   console.log(`[${prefix}] ${message}`)
 }
 
-export function logError(message: string, error?: unknown, prefix = 'KEEPER'): void {
+export function logError(message: string, error?: unknown, prefix = processTag): void {
   console.error(`[${prefix}] ${message}`, error instanceof Error ? error.message : error)
 }

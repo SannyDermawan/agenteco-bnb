@@ -53,7 +53,11 @@ export function loadConfig(): KeeperConfig {
     rpcUrl: RPC_URL,
     agentEcoAddress: AGENT_ECO_ADDRESS,
     keeperPrivateKey: normalizedKey as Hex,
-    keeperIntervalMs: optionalNumber('KEEPER_INTERVAL_MS', 30_000),
+    // KEEPER_POLL_INTERVAL_MS (spec name); KEEPER_INTERVAL_MS still honored for existing deployments.
+    keeperIntervalMs: optionalNumber(
+      process.env.KEEPER_POLL_INTERVAL_MS?.trim() ? 'KEEPER_POLL_INTERVAL_MS' : 'KEEPER_INTERVAL_MS',
+      15_000
+    ),
     dryRun: optionalBoolean('DRY_RUN', false),
     deploymentBlock: DEPLOYMENT_BLOCK,
   }
