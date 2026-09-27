@@ -9,6 +9,7 @@ import { ArrowRightIcon } from '@/components/app/icons'
 import { listDisputeReasons } from '@/lib/api/disputes'
 import { explorerTxUrl, useDisputes, type DisputeSummary } from '@/lib/web3/escrowEvents'
 import { useArbiter, useIsArbiter, useUsdtDecimals } from '@/lib/web3/hooks'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 const DISPUTED = 4 // AgentEco.sol OrderStatus
 
@@ -31,14 +32,20 @@ function DisputeRow({ d, reason, decimals }: { d: DisputeSummary; reason?: strin
     <NeumorphicCard className="p-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[15px] font-semibold text-[#F5F5F7]">Escrow #{d.escrowId.toString()}</span>
-        <span className="text-[13px] text-[#8B8D96]">{amount} USDT</span>
+        <span className="text-[13px] text-[#8B8D96]">{amount} {TOKEN_SYMBOL}</span>
         {open ? (
           <span className="rounded-full border border-[#EF4444]/35 bg-[#EF4444]/10 px-2 py-0.5 text-[11px] font-medium text-[#F87171]">
             Waiting {waitingFor(d.raisedAt)}
           </span>
         ) : (
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-[#8B8D96]">
-            {d.resolution ? (d.resolution.releasedToSeller ? 'Released to seller' : 'Refunded to buyer') : 'Closed'}
+            {d.resolution
+              ? d.resolution.byTimeout
+                ? 'Refunded — arbiter deadline passed'
+                : d.resolution.releasedToSeller
+                  ? 'Released to seller'
+                  : 'Refunded to buyer'
+              : 'Closed'}
           </span>
         )}
         <Link
@@ -61,9 +68,11 @@ function DisputeRow({ d, reason, decimals }: { d: DisputeSummary; reason?: strin
         </div>
         <div className="text-[#8B8D96]">
           Raised {new Date(d.raisedAt).toLocaleString()}{' '}
-          <a href={explorerTxUrl(d.raisedTx)} target="_blank" rel="noreferrer" className="text-[#5B5FEF] hover:underline">
-            ↗
-          </a>
+          {d.raisedTx && (
+            <a href={explorerTxUrl(d.raisedTx)} target="_blank" rel="noreferrer" className="text-[#5B5FEF] hover:underline">
+              ↗
+            </a>
+          )}
         </div>
       </div>
 

@@ -3,72 +3,94 @@ import { useQuery } from '@tanstack/react-query'
 import { usePublicClient } from 'wagmi'
 import { decodeEventLog, toHex, type Address, type Hash, type Hex } from 'viem'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS } from './abi'
-import { botChain } from './chain'
-import { DEPLOY_BLOCK } from './network'
+import { appChain } from './chain'
+import { DEPLOY_BLOCK, LOG_HISTORY_BLOCKS, LOG_RANGE } from './network'
 
 // Block AgentEco.sol was deployed at — no escrow event can predate it, so
 // every log scan starts here instead of at genesis. Per network, see ./network.ts.
 export const AGENT_ECO_DEPLOY_BLOCK = DEPLOY_BLOCK
-// The RPC answers the full range since deployment in one call today; chunked
-// anyway so the scan keeps working as the chain grows.
-const LOG_CHUNK = BigInt(500000)
+// eth_getLogs span per call — each RPC caps it (PublicNode on BSC Testnet:
+// 50,000 blocks), so every scan walks the chain in chunks. See ./network.ts.
+const LOG_CHUNK = LOG_RANGE
 
 export function explorerTxUrl(hash: string): string {
-  return `${botChain.blockExplorers.default.url}/tx/${hash}`
+  return `${appChain.blockExplorers.default.url}/tx/${hash}`
 }
 
 type PublicClient = NonNullable<ReturnType<typeof usePublicClient>>
 
-async function forEachChunk(client: PublicClient, fn: (fromBlock: bigint, toBlock: bigint) => Promise<void>) {
+/**
+ * Walks the chain in LOG_CHUNK steps — but never further back than the RPC
+ * still serves logs (PublicNode on BSC Testnet prunes after ~80,000 blocks).
+ * Only explorer links rely on logs; escrow discovery reads contract state.
+ */
+async function forEachRecentChunk(client: PublicClient, fn: (fromBlock: bigint, toBlock: bigint) => Promise<void>) {
   const head = await client.getBlockNumber()
-  for (let from = AGENT_ECO_DEPLOY_BLOCK; from <= head; from += LOG_CHUNK) {
+  const oldestServed = LOG_HISTORY_BLOCKS === null ? BigInt(0) : head - LOG_HISTORY_BLOCKS
+  const start = AGENT_ECO_DEPLOY_BLOCK > oldestServed ? AGENT_ECO_DEPLOY_BLOCK : oldestServed
+  for (let from = start; from <= head; from += LOG_CHUNK) {
     const to = from + LOG_CHUNK - BigInt(1) < head ? from + LOG_CHUNK - BigInt(1) : head
     await fn(from, to)
   }
 }
 
-export interface EscrowCreatedLog {
+export interface EscrowBasic {
   escrowId: bigint
   buyer: Address
   seller: Address
   amount: bigint
+  status: number
+}
+
+const MULTICALL_BATCH = 200
+
+/**
+ * Every escrow on the contract, from state: ids run 1..nextEscrowId-1 and each
+ * is read through getEscrowBasic (batched with Multicall3). No event logs, so
+ * it keeps working after the RPC prunes history.
+ */
+async function readAllEscrows(client: PublicClient): Promise<EscrowBasic[]> {
+  const next = await client.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'nextEscrowId' })
+  const ids: bigint[] = []
+  for (let id = BigInt(1); id < next; id++) ids.push(id)
+
+  const out: EscrowBasic[] = []
+  for (let i = 0; i < ids.length; i += MULTICALL_BATCH) {
+    const chunk = ids.slice(i, i + MULTICALL_BATCH)
+    const calls = chunk.map((id) => ({
+      address: AGENT_ECO_ADDRESS,
+      abi: AGENT_ECO_ABI,
+      functionName: 'getEscrowBasic' as const,
+      args: [id] as const,
+    }))
+    const results = appChain.contracts?.multicall3
+      ? await client.multicall({ contracts: calls, allowFailure: false })
+      : await Promise.all(calls.map((c) => client.readContract(c)))
+    results.forEach(([buyer, seller, amount, status], j) => {
+      out.push({ escrowId: chunk[j], buyer, seller, amount, status: Number(status) })
+    })
+  }
+  return out
 }
 
 /**
- * Every escrow where any of `addresses` is the buyer or the seller — straight
- * from EscrowCreated logs, so it includes direct "Request Service" hires that
- * never get an Order row in the database.
+ * Every escrow where any of `addresses` is the buyer or the seller — read from
+ * contract state, so it includes direct "Request Service" hires that never get
+ * an Order row in the database.
  */
 export function useEscrowsInvolving(addresses: string[]) {
-  const client = usePublicClient({ chainId: botChain.id })
-  const normalized = [...new Set(addresses.map((a) => a.toLowerCase()))].sort() as Address[]
+  const client = usePublicClient({ chainId: appChain.id })
+  const normalized = [...new Set(addresses.map((a) => a.toLowerCase()))].sort()
 
   return useQuery({
     queryKey: ['escrowsInvolving', normalized],
     enabled: !!client && normalized.length > 0,
     refetchInterval: 15_000,
     queryFn: async () => {
-      const byId = new Map<string, EscrowCreatedLog>()
-      await forEachChunk(client!, async (fromBlock, toBlock) => {
-        const [asBuyer, asSeller] = await Promise.all(
-          (['buyer', 'seller'] as const).map((side) =>
-            client!.getContractEvents({
-              address: AGENT_ECO_ADDRESS,
-              abi: AGENT_ECO_ABI,
-              eventName: 'EscrowCreated',
-              args: { [side]: normalized },
-              fromBlock,
-              toBlock,
-            })
-          )
-        )
-        for (const log of [...asBuyer, ...asSeller]) {
-          const { escrowId, buyer, seller, amount } = log.args
-          if (escrowId === undefined || !buyer || !seller || amount === undefined) continue
-          byId.set(escrowId.toString(), { escrowId, buyer, seller, amount })
-        }
-      })
-      return [...byId.values()]
+      const mine = new Set(normalized)
+      return (await readAllEscrows(client!)).filter(
+        (e) => mine.has(e.buyer.toLowerCase()) || mine.has(e.seller.toLowerCase())
+      )
     },
   })
 }
@@ -81,71 +103,84 @@ export interface DisputeSummary {
   /** Live AgentEco.sol status — 4 DISPUTED while open, 5/6 once resolved. */
   status: number
   raisedAt: number // unix ms
-  raisedTx: Hash
-  resolution?: { releasedToSeller: boolean; at: number; tx: Hash }
+  /** On-chain dispute deadline (unix ms); after it anyone can refund the buyer. */
+  deadline: number
+  /** Only while the RPC still serves that block's logs. */
+  raisedTx?: Hash
+  resolution?: {
+    releasedToSeller: boolean
+    /** Refunded by claimDisputeTimeout rather than an arbiter ruling. */
+    byTimeout: boolean
+    tx?: Hash
+  }
 }
 
-// AgentEco.sol OrderStatus.DISPUTED
+// AgentEco.sol OrderStatus
 const DISPUTED = 4
+const SETTLED = 5
+const ZERO_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000'
 
 /**
- * Every dispute ever raised on the contract, straight from DisputeRaised /
- * DisputeResolved logs — the arbiter's inbox. Open ones are still DISPUTED
- * on-chain. `enabled` lets non-arbiters skip the scan entirely.
+ * Every dispute ever raised — the arbiter's inbox. Found from contract state
+ * (disputedAt != 0), with transaction links added from logs where the RPC
+ * still has them. `enabled` lets non-arbiters skip the reads entirely.
  */
 export function useDisputes(enabled: boolean) {
-  const client = usePublicClient({ chainId: botChain.id })
+  const client = usePublicClient({ chainId: appChain.id })
 
   return useQuery({
     queryKey: ['disputes'],
     enabled: enabled && !!client,
     refetchInterval: 15_000,
     queryFn: async (): Promise<DisputeSummary[]> => {
-      const raised: { escrowId: bigint; tx: Hash; block: bigint }[] = []
-      const resolved = new Map<string, { releasedToSeller: boolean; tx: Hash; block: bigint }>()
-      await forEachChunk(client!, async (fromBlock, toBlock) => {
-        const [r, s] = await Promise.all([
-          client!.getContractEvents({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, eventName: 'DisputeRaised', fromBlock, toBlock }),
-          client!.getContractEvents({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, eventName: 'DisputeResolved', fromBlock, toBlock }),
-        ])
-        for (const log of r) if (log.args.escrowId !== undefined) raised.push({ escrowId: log.args.escrowId, tx: log.transactionHash, block: log.blockNumber })
-        for (const log of s) {
-          if (log.args.escrowId === undefined) continue
-          resolved.set(log.args.escrowId.toString(), { releasedToSeller: !!log.args.releasedToSeller, tx: log.transactionHash, block: log.blockNumber })
-        }
-      })
-
-      const blockTime = new Map<bigint, number>()
-      const timeOf = async (block: bigint) => {
-        if (!blockTime.has(block)) blockTime.set(block, Number((await client!.getBlock({ blockNumber: block })).timestamp) * 1000)
-        return blockTime.get(block)!
-      }
-
-      const summaries = await Promise.all(
-        raised.map(async ({ escrowId, tx, block }): Promise<DisputeSummary> => {
-          const [buyer, seller, amount, status] = await client!.readContract({
-            address: AGENT_ECO_ADDRESS,
-            abi: AGENT_ECO_ABI,
-            functionName: 'getEscrowBasic',
-            args: [escrowId],
-          })
-          const res = resolved.get(escrowId.toString())
-          return {
-            escrowId,
-            buyer,
-            seller,
-            amount,
-            status: Number(status),
-            raisedAt: await timeOf(block),
-            raisedTx: tx,
-            resolution: res ? { releasedToSeller: res.releasedToSeller, at: await timeOf(res.block), tx: res.tx } : undefined,
-          }
+      const escrows = (await readAllEscrows(client!)).filter((e) => e.status >= DISPUTED)
+      const details = await Promise.all(
+        escrows.map(async (e) => {
+          const [info, hashes] = await Promise.all([
+            client!.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowDisputeInfo', args: [e.escrowId] }),
+            client!.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [e.escrowId] }),
+          ])
+          return { e, disputedAt: info[0], disputeDeadline: info[1], resolutionHash: hashes[4] }
         })
       )
+      const disputed = details.filter((d) => d.disputedAt > BigInt(0))
+
+      const raisedTx = new Map<string, Hash>()
+      const resolvedTx = new Map<string, Hash>()
+      if (disputed.length) {
+        await forEachRecentChunk(client!, async (fromBlock, toBlock) => {
+          const [r, s] = await Promise.all([
+            client!.getContractEvents({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, eventName: 'DisputeRaised', fromBlock, toBlock }),
+            client!.getContractEvents({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, eventName: 'DisputeResolved', fromBlock, toBlock }),
+          ])
+          for (const log of r) if (log.args.escrowId !== undefined) raisedTx.set(log.args.escrowId.toString(), log.transactionHash)
+          for (const log of s) if (log.args.escrowId !== undefined) resolvedTx.set(log.args.escrowId.toString(), log.transactionHash)
+        }).catch(() => {
+          // Links are a nice-to-have; the inbox itself comes from contract state.
+        })
+      }
+
+      const summaries = disputed.map(({ e, disputedAt, disputeDeadline, resolutionHash }): DisputeSummary => {
+        const key = e.escrowId.toString()
+        const open = e.status === DISPUTED
+        return {
+          escrowId: e.escrowId,
+          buyer: e.buyer,
+          seller: e.seller,
+          amount: e.amount,
+          status: e.status,
+          raisedAt: Number(disputedAt) * 1000,
+          deadline: Number(disputeDeadline) * 1000,
+          raisedTx: raisedTx.get(key),
+          resolution: open
+            ? undefined
+            : { releasedToSeller: e.status === SETTLED, byTimeout: resolutionHash === ZERO_HASH, tx: resolvedTx.get(key) },
+        }
+      })
       // Open disputes oldest-first (longest waiting on top); resolved ones newest-first.
-      const open = summaries.filter((d) => d.status === DISPUTED).sort((a, b) => a.raisedAt - b.raisedAt)
-      const closed = summaries.filter((d) => d.status !== DISPUTED).sort((a, b) => (b.resolution?.at ?? 0) - (a.resolution?.at ?? 0))
-      return [...open, ...closed]
+      const openOnes = summaries.filter((d) => d.status === DISPUTED).sort((a, b) => a.raisedAt - b.raisedAt)
+      const closed = summaries.filter((d) => d.status !== DISPUTED).sort((a, b) => b.raisedAt - a.raisedAt)
+      return [...openOnes, ...closed]
     },
   })
 }
@@ -165,11 +200,14 @@ const STEP_EVENTS: string[][] = [
   ['ResultDelivered'],
   ['EscrowSettled', 'ReviewFinalized', 'DisputeResolved'],
 ]
-const REFUND_EVENTS = ['EscrowRefunded', 'ExecutionTimedOut']
+const REFUND_EVENTS = ['EscrowRefunded', 'AcceptTimedOut', 'ExecutionTimedOut', 'DisputeTimedOut']
 
-/** The transaction behind each lifecycle step of one escrow, for explorer links. */
+/**
+ * The transaction behind each lifecycle step of one escrow, for explorer links.
+ * Steps older than the RPC's log history simply have no link.
+ */
 export function useEscrowTxHashes(escrowId?: bigint) {
-  const client = usePublicClient({ chainId: botChain.id })
+  const client = usePublicClient({ chainId: appChain.id })
 
   return useQuery({
     queryKey: ['escrowTxHashes', escrowId?.toString()],
@@ -178,7 +216,7 @@ export function useEscrowTxHashes(escrowId?: bigint) {
     refetchInterval: 10_000,
     queryFn: async (): Promise<EscrowTxHashes> => {
       const firstHashByEvent = new Map<string, Hash>()
-      await forEachChunk(client!, async (fromBlock, toBlock) => {
+      await forEachRecentChunk(client!, async (fromBlock, toBlock) => {
         // Every AgentEco event indexes escrowId as its first topic — one
         // unfiltered-by-event query catches the escrow's whole lifecycle.
         const logs = await client!.request({

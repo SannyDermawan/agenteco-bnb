@@ -1,19 +1,18 @@
 import { createPublicClient, http, type Address } from 'viem'
 import { createOnchainClients } from '../../agent-runtime/src/index.ts'
-import { AGENT_ECO_ABI } from './abi/agentEcoAbi.ts'
 import { decryptAgentKey } from './agentKeyCrypto.ts'
 import { prisma } from './db.ts'
 import { refundLeftover } from './host/buyerTaskHost.ts'
 
-import { AGENT_ECO_ADDRESS, RPC_URL, botChain } from './network.ts'
+import { RPC_URL, appChain } from './network.ts'
+import { readAllEscrows } from '../../agent-runtime/src/onchain/escrowIndex.ts'
 
-const publicClient = createPublicClient({ chain: botChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
 
 // AgentEco.sol OrderStatus: FUNDED, EXECUTING, DELIVERED, DISPUTED — money is
 // locked and someone still has to act. CREATED/SETTLED/REFUNDED are safe.
 const IN_PROGRESS_STATUSES = new Set([1, 2, 3, 4])
 const STATUS_LABEL = ['CREATED', 'FUNDED', 'EXECUTING', 'DELIVERED', 'DISPUTED', 'SETTLED', 'REFUNDED']
-const MAX_BLOCK_RANGE = BigInt(5000)
 
 type DeletableAgent = {
   id: string
@@ -21,34 +20,6 @@ type DeletableAgent = {
   walletAddress: string | null
   taskStatus: string | null
   escrowScanBlock: bigint | null
-}
-
-async function escrowStatus(escrowId: bigint): Promise<number> {
-  return publicClient.readContract({
-    address: AGENT_ECO_ADDRESS,
-    abi: AGENT_ECO_ABI,
-    functionName: 'getEscrowStatus',
-    args: [escrowId],
-  })
-}
-
-/** Escrows naming a hosted seller's own wallet — includes direct hires that have no Order row. */
-async function hostedSellerEscrowIds(wallet: Address, fromBlock: bigint): Promise<bigint[]> {
-  const ids: bigint[] = []
-  const latest = await publicClient.getBlockNumber()
-  for (let cursor = fromBlock; cursor <= latest; cursor += MAX_BLOCK_RANGE + BigInt(1)) {
-    const end = cursor + MAX_BLOCK_RANGE > latest ? latest : cursor + MAX_BLOCK_RANGE
-    const events = await publicClient.getContractEvents({
-      address: AGENT_ECO_ADDRESS,
-      abi: AGENT_ECO_ABI,
-      eventName: 'EscrowCreated',
-      args: { seller: wallet },
-      fromBlock: cursor,
-      toBlock: end,
-    })
-    for (const event of events) if (event.args.escrowId !== undefined) ids.push(event.args.escrowId)
-  }
-  return ids
 }
 
 /**
@@ -66,15 +37,17 @@ export async function findBlockingWork(agent: DeletableAgent): Promise<string | 
     return 'This agent has an agreed deal that has not been funded yet.'
   }
 
-  const escrowIds = new Set(orders.filter((o) => o.escrowId).map((o) => BigInt(o.escrowId!)))
-  if (agent.role === 'seller' && agent.taskStatus !== null && agent.walletAddress && agent.escrowScanBlock !== null) {
-    for (const id of await hostedSellerEscrowIds(agent.walletAddress as Address, agent.escrowScanBlock)) escrowIds.add(id)
-  }
-
-  for (const escrowId of escrowIds) {
-    const status = await escrowStatus(escrowId)
-    if (IN_PROGRESS_STATUSES.has(status)) {
-      return `On-chain order #${escrowId} is still ${STATUS_LABEL[status]} — finish, settle, or refund it first.`
+  // Every escrow this agent is part of: its orders' escrows, plus any escrow
+  // naming its wallet (direct hires have no Order row). Read from contract
+  // state — no event logs, so it works on RPCs that prune history.
+  const orderEscrowIds = new Set(orders.filter((o) => o.escrowId).map((o) => o.escrowId!))
+  const wallet = agent.walletAddress?.toLowerCase()
+  for (const escrow of await readAllEscrows(publicClient)) {
+    const involved =
+      orderEscrowIds.has(escrow.id.toString()) ||
+      (!!wallet && (escrow.seller.toLowerCase() === wallet || escrow.buyer.toLowerCase() === wallet))
+    if (involved && IN_PROGRESS_STATUSES.has(escrow.status)) {
+      return `On-chain order #${escrow.id} is still ${STATUS_LABEL[escrow.status]} — finish, settle, or refund it first.`
     }
   }
   return null
@@ -82,7 +55,7 @@ export async function findBlockingWork(agent: DeletableAgent): Promise<string | 
 
 /**
  * Empties a hosted agent's own wallet back to whoever funded it: all USDT,
- * then all native BOT minus the gas for that last transfer.
+ * then all native gas token (tBNB / BOT) minus the gas for that last transfer.
  */
 export async function withdrawHostedWallet(encryptedKey: string, to: Address, label: string): Promise<void> {
   const onchain = createOnchainClients(decryptAgentKey(encryptedKey), RPC_URL)

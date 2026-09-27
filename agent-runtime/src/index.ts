@@ -5,7 +5,7 @@ export {
   AGENT_ECO_ADDRESS,
   USDT_ADDRESS,
   DEPLOYMENT_BLOCK,
-  botChain,
+  appChain,
   assertRpcMatchesNetwork,
 } from './network.ts'
 export { DemoAgentRuntime } from './runtime.ts'
@@ -30,11 +30,10 @@ export {
   markDelivered as markOnchainDelivered,
   acceptAndSettle as acceptAndSettleOnchain,
   getEscrowStatus,
-  discoverEscrowsAsSeller,
 } from './onchain/escrow.ts'
 export { onChainStatusLabel, ON_CHAIN_STATUS } from './onchain/abi.ts'
 export type { OnChainStatus } from './onchain/abi.ts'
-export { loadScanState, saveScanState } from './onchain/checkpoint.ts'
-export type { ScanState } from './onchain/checkpoint.ts'
+export { allEscrowIds, readAllEscrows, readEscrowBasics } from './onchain/escrowIndex.ts'
+export type { EscrowBasic } from './onchain/escrowIndex.ts'
 export { publishEscrowResult } from './resultsClient.ts'
 export type { EscrowResult } from './resultsClient.ts'

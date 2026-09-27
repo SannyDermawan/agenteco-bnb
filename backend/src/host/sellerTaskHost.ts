@@ -1,5 +1,5 @@
 import { privateKeyToAccount } from 'viem/accounts'
-import { keccak256, toHex, type Address } from 'viem'
+import { createPublicClient, http, keccak256, toHex, type Address } from 'viem'
 import {
   DemoAgentRuntime,
   respondToNegotiation,
@@ -10,15 +10,16 @@ import {
   startOnchainExecution,
   markOnchainDelivered,
   getEscrowStatus,
-  discoverEscrowsAsSeller,
   publishEscrowResult,
   type OnchainClients,
 } from '../../../agent-runtime/src/index.ts'
 import { decryptAgentKey } from '../agentKeyCrypto.ts'
 import { prismaWithAgentKey } from '../db.ts'
 import { log, logError } from '../log.ts'
+import { warnIfLowGas } from '../gasWatch.ts'
 import { API_URL, refundLeftover } from './buyerTaskHost.ts'
-import { RPC_URL } from '../network.ts'
+import { RPC_URL, TOKEN_SYMBOL, appChain } from '../network.ts'
+import { readAllEscrows, type EscrowBasic } from '../../../agent-runtime/src/onchain/escrowIndex.ts'
 
 // AgentEco.sol OrderStatus enum ordering.
 const ON_CHAIN_FUNDED = 1
@@ -39,13 +40,13 @@ export interface HostedSellerAgentRow {
 }
 
 /**
- * Per-agent scan checkpoint, in memory only. After a host restart it falls
- * back to the agent's escrowScanBlock (its creation block) and rescans from
- * there — cheap at testnet scale, and every step below is idempotent against
- * on-chain status, so a rescan never double-executes anything.
+ * Escrows each seller has nothing left to do on, in memory only. After a host
+ * restart everything is re-checked once — every step below is idempotent
+ * against on-chain status, so that never double-executes anything.
  */
-type ScanState = { lastProcessedBlock: bigint; pendingEscrowIds: Set<bigint> }
-const scanStates = new Map<string, ScanState>()
+const finishedEscrows = new Map<string, Set<bigint>>()
+
+const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
 
 async function hasPublishedResult(escrowId: bigint): Promise<boolean> {
   const res = await fetch(`${API_URL}/escrow-results/${escrowId}`)
@@ -93,7 +94,11 @@ async function advanceEscrow(
   return status !== 0
 }
 
-export async function processHostedSellerTask(agentRow: HostedSellerAgentRow): Promise<void> {
+/**
+ * @param myEscrows every escrow naming this agent's wallet as seller — read
+ *   from contract state by the caller, once per cycle for all sellers.
+ */
+export async function processHostedSellerTask(agentRow: HostedSellerAgentRow, myEscrows: EscrowBasic[]): Promise<void> {
   if (!agentRow.agentWalletKey || !agentRow.depositorWallet) return
   const capability = agentRow.capabilities[0]
   if (!capability) return
@@ -101,6 +106,7 @@ export async function processHostedSellerTask(agentRow: HostedSellerAgentRow): P
   const privateKey = decryptAgentKey(agentRow.agentWalletKey)
   const account = privateKeyToAccount(privateKey)
   const onchain = createOnchainClients(privateKey, RPC_URL)
+  await warnIfLowGas(onchain.publicClient, account.address, `hosted seller "${agentRow.name}"`, 'hosted')
 
   const runtime = new DemoAgentRuntime({
     name: agentRow.name,
@@ -122,8 +128,8 @@ export async function processHostedSellerTask(agentRow: HostedSellerAgentRow): P
       const offeredPrice = Number(lastMessage.price)
       const decision = runtime.decideOnOffer(offeredPrice, countOffersBySide(negotiation, 'seller'))
       log(
-        `[host:${agentRow.name}] negotiation ${negotiation.id}: incoming ${offeredPrice} USDT -> ${decision.action}` +
-          (decision.action === 'counter' ? ` (${decision.price} USDT)` : '')
+        `[host:${agentRow.name}] negotiation ${negotiation.id}: incoming ${offeredPrice} ${TOKEN_SYMBOL} -> ${decision.action}` +
+          (decision.action === 'counter' ? ` (${decision.price} ${TOKEN_SYMBOL})` : '')
       )
       await respondToNegotiation(API_URL, account, negotiation.id, {
         side: 'seller',
@@ -135,29 +141,15 @@ export async function processHostedSellerTask(agentRow: HostedSellerAgentRow): P
     logError(`[host:${agentRow.name}] negotiations skipped this cycle`, error, 'HOST')
   }
 
-  // 2. Discover escrows naming this wallet as seller — negotiated orders and
-  //    direct "Request Service" hires alike, straight from the chain.
-  let state = scanStates.get(agentRow.id)
-  if (!state) {
-    const startBlock = agentRow.escrowScanBlock ?? (await onchain.publicClient.getBlockNumber())
-    state = { lastProcessedBlock: startBlock - BigInt(1), pendingEscrowIds: new Set() }
-    scanStates.set(agentRow.id, state)
-  }
-
-  const latestBlock = await onchain.publicClient.getBlockNumber()
-  if (state.lastProcessedBlock < latestBlock) {
-    const newIds = await discoverEscrowsAsSeller(onchain, account.address, state.lastProcessedBlock + BigInt(1), latestBlock)
-    for (const id of newIds) {
-      if (!state.pendingEscrowIds.has(id)) log(`[host:${agentRow.name}] discovered escrow #${id} on-chain`)
-      state.pendingEscrowIds.add(id)
-    }
-    state.lastProcessedBlock = latestBlock
-  }
-
-  // 3. Work every pending escrow; drop the ones with nothing left to do.
-  for (const escrowId of [...state.pendingEscrowIds]) {
-    const done = await advanceEscrow(runtime, onchain, escrowId, capability)
-    if (done) state.pendingEscrowIds.delete(escrowId)
+  // 2. Work every escrow naming this wallet as seller — negotiated orders and
+  //    direct "Request Service" hires alike, straight from contract state.
+  let finished = finishedEscrows.get(agentRow.id)
+  if (!finished) finishedEscrows.set(agentRow.id, (finished = new Set()))
+  for (const escrow of myEscrows) {
+    if (finished.has(escrow.id)) continue
+    if (escrow.status === ON_CHAIN_FUNDED) log(`[host:${agentRow.name}] found funded escrow #${escrow.id}`)
+    const done = await advanceEscrow(runtime, onchain, escrow.id, capability)
+    if (done) finished.add(escrow.id)
   }
 
   // 4. Sweep settled earnings out to the owner — the agent wallet is only
@@ -168,10 +160,19 @@ export async function processHostedSellerTask(agentRow: HostedSellerAgentRow): P
 export async function runSellerHostCycleOnce(): Promise<void> {
   // The only place (besides the buyer host) allowed to read agentWalletKey — see db.ts.
   const activeSellers = await prismaWithAgentKey.agent.findMany({ where: { role: 'seller', taskStatus: 'active', deletedAt: null } })
+  if (activeSellers.length === 0) return
+
+  // One batched read of every escrow for all sellers — no event logs, so it
+  // keeps working on RPCs that prune history.
+  const bySeller = new Map<string, EscrowBasic[]>()
+  for (const escrow of await readAllEscrows(publicClient)) {
+    const key = escrow.seller.toLowerCase()
+    bySeller.set(key, [...(bySeller.get(key) ?? []), escrow])
+  }
 
   for (const agentRow of activeSellers) {
     try {
-      await processHostedSellerTask(agentRow)
+      await processHostedSellerTask(agentRow, bySeller.get(agentRow.walletAddress?.toLowerCase() ?? '') ?? [])
     } catch (error) {
       logError(`[host:${agentRow.name}] cycle failed`, error, 'HOST')
     }

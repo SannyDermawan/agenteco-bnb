@@ -1,7 +1,7 @@
 import { keccak256, toHex, type LocalAccount } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { DemoAgentRuntime } from '../../agent-runtime/src/runtime.ts'
-import { DEPLOYMENT_BLOCK, RPC_URL } from '../../agent-runtime/src/network.ts'
+import { RPC_URL } from '../../agent-runtime/src/network.ts'
 import { registerOrSyncSelf } from '../../agent-runtime/src/registryClient.ts'
 import {
   countOffersBySide,
@@ -10,8 +10,8 @@ import {
   respondToNegotiation,
 } from '../../agent-runtime/src/negotiationClient.ts'
 import { createOnchainClients } from '../../agent-runtime/src/onchain/clients.ts'
-import { discoverEscrowsAsSeller, getEscrowStatus, markDelivered, startExecution } from '../../agent-runtime/src/onchain/escrow.ts'
-import { loadScanState, saveScanState } from '../../agent-runtime/src/onchain/checkpoint.ts'
+import { getEscrowStatus, markDelivered, startExecution } from '../../agent-runtime/src/onchain/escrow.ts'
+import { readAllEscrows } from '../../agent-runtime/src/onchain/escrowIndex.ts'
 import { publishEscrowResult } from '../../agent-runtime/src/resultsClient.ts'
 import { sellerAgentConfig } from './config.ts'
 
@@ -19,7 +19,9 @@ const API_URL = process.env.AGENTECO_API_URL ?? 'http://localhost:4000'
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 3000)
 const privateKey = process.env.WALLET_PRIVATE_KEY as `0x${string}` | undefined
 
-const STATE_FILE = '.seller-agent-state.json'
+// Escrows with nothing left to do, in memory. After a restart each is re-checked
+// once; every step is idempotent against on-chain status.
+const finishedEscrows = new Set<bigint>()
 
 // AgentEco.sol OrderStatus enum ordering.
 const ON_CHAIN_FUNDED = 1
@@ -76,27 +78,14 @@ async function handleFundedEscrows(
   onchain: ReturnType<typeof createOnchainClients>,
   sellerAddress: `0x${string}`
 ): Promise<void> {
-  const state = loadScanState(STATE_FILE)
-  const latestBlock = await onchain.publicClient.getBlockNumber()
-  const fromBlock =
-    state.lastProcessedBlock !== null ? state.lastProcessedBlock + BigInt(1) : (DEPLOYMENT_BLOCK ?? latestBlock)
-
-  const knownEscrowIds = new Set(state.knownEscrowIds)
-
-  if (fromBlock <= latestBlock) {
-    const newIds = await discoverEscrowsAsSeller(onchain, sellerAddress, fromBlock, latestBlock)
-    for (const id of newIds) {
-      if (!knownEscrowIds.has(id)) {
-        knownEscrowIds.add(id)
-        console.log(`[${runtime.config.name}] discovered escrow #${id} on-chain`)
-      }
-    }
-  }
-
+  // Every escrow naming this wallet as seller, from contract state (no event
+  // logs — public BSC Testnet RPCs prune history after ~18 hours).
+  const mine = (await readAllEscrows(onchain.publicClient)).filter(
+    (e) => e.seller.toLowerCase() === sellerAddress.toLowerCase() && !finishedEscrows.has(e.id)
+  )
   const capability = runtime.config.capabilities[0]
-  const stillPending = new Set<bigint>()
 
-  for (const escrowId of knownEscrowIds) {
+  for (const { id: escrowId } of mine) {
     const status = await getEscrowStatus(onchain, escrowId)
 
     if (status === ON_CHAIN_FUNDED || status === ON_CHAIN_EXECUTING) {
@@ -112,18 +101,17 @@ async function handleFundedEscrows(
       await markDelivered(onchain, escrowId, resultHash)
       console.log(`[${runtime.config.name}] escrow #${escrowId} marked delivered.`)
       await publishResultSafely(runtime, escrowId, capability)
+      finishedEscrows.add(escrowId)
     } else if (status === ON_CHAIN_DELIVERED || status === ON_CHAIN_SETTLED) {
       // Already delivered — either by an earlier cycle, or (self-healing)
       // an escrow that was delivered before result-publishing existed.
       // execute() is deterministic per capability, so recomputing it here
       // reproduces the exact same hash already committed on-chain.
       await publishResultSafely(runtime, escrowId, capability)
-    } else {
-      stillPending.add(escrowId) // not funded yet, or disputed/refunded — leave tracked, nothing to do this cycle
+      finishedEscrows.add(escrowId)
     }
+    // Not funded yet, or disputed/refunded — nothing to do this cycle.
   }
-
-  saveScanState(STATE_FILE, { lastProcessedBlock: latestBlock, knownEscrowIds: [...stillPending] })
 }
 
 async function main(): Promise<void> {
