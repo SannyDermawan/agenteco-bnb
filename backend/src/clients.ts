@@ -1,11 +1,12 @@
-import { createPublicClient, createWalletClient, http } from 'viem'
+import { createPublicClient, createWalletClient, http, nonceManager } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { appChain } from './chain.ts'
 import { RPC_URL, appTransport } from './network.ts'
 import type { KeeperConfig } from './config.ts'
 
 export function createClients(config: KeeperConfig) {
-  const account = privateKeyToAccount(config.keeperPrivateKey)
+  // Local nonce tracking: public RPCs can lag on the pending nonce.
+  const account = privateKeyToAccount(config.keeperPrivateKey, { nonceManager })
   // The configured RPC with its fallbacks, unless a different one was given.
   const transport = config.rpcUrl === RPC_URL ? appTransport() : http(config.rpcUrl)
 
