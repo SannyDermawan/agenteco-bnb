@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CAPABILITIES, CAPABILITY_IDS, LIMITS, isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
 
 const CATEGORIES = ['Research', 'Data', 'Content', 'Automation'] as const
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/
@@ -31,6 +32,12 @@ const baseAgentSchema = z.object({
   // it from the host runtime (see host/sellerTaskHost.ts). Off by default so
   // self-custody sellers (seller-agent/) keep registering their own wallet.
   hosted: z.boolean().optional(),
+  // Seller: style and focus for its model — never schema or safety (spec §8.3).
+  customInstructions: z.string().trim().max(LIMITS.textChars).optional(),
+  // Hosted buyer: what to buy (validated against the capability's input
+  // schema below) and what a good result must satisfy (spec §8.2).
+  taskBrief: z.unknown().optional(),
+  acceptanceCriteria: z.string().trim().max(LIMITS.textChars).optional(),
   // ownerWallet is NOT accepted here — it's derived from the verified
   // signature (see src/auth.ts), not trusted from the request body.
 })
@@ -49,6 +56,28 @@ export const createAgentSchema = baseAgentSchema
     }
     if (data.role === 'seller' && !data.description) {
       ctx.addIssue({ code: 'custom', path: ['description'], message: 'description is required for a seller agent' })
+    }
+    // Only the four platform capabilities exist (spec §7: no user-made capabilities).
+    for (const cap of data.capabilities ?? []) {
+      if (!isCapabilityId(cap)) {
+        ctx.addIssue({ code: 'custom', path: ['capabilities'], message: `Unknown capability "${cap}" — use one of: ${CAPABILITY_IDS.join(', ')}` })
+      }
+    }
+    const capability = data.capabilities?.[0]
+    if (data.role === 'buyer' && data.hosted !== false && capability && isCapabilityId(capability)) {
+      if (data.taskBrief === undefined) {
+        ctx.addIssue({ code: 'custom', path: ['taskBrief'], message: 'taskBrief is required for a hosted buyer (what should it buy?)' })
+      } else {
+        const brief = CAPABILITIES[capability].input.safeParse(data.taskBrief)
+        if (!brief.success) {
+          for (const issue of brief.error.issues) {
+            ctx.addIssue({ code: 'custom', path: ['taskBrief', ...issue.path.map(String)], message: issue.message })
+          }
+        }
+      }
+    }
+    if (data.role !== 'seller' && data.customInstructions) {
+      ctx.addIssue({ code: 'custom', path: ['customInstructions'], message: 'customInstructions only apply to seller agents' })
     }
     if (data.role === 'buyer' && data.maxBudget === undefined) {
       ctx.addIssue({ code: 'custom', path: ['maxBudget'], message: 'maxBudget is required for a buyer agent (it sets the required deposit)' })

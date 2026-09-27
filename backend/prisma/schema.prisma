@@ -57,6 +57,15 @@ model Agent {
   // is never hard-deleted. Set = hidden from listings and ignored by the host.
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
+  // --- AI agents (spec §8.1) ---
+  // Seller: style/focus preferences for its model (≤500 chars); never changes
+  // the output schema or safety rules.
+  customInstructions String? @map("custom_instructions")
+  // Hosted buyer: what to buy — a brief matching its capability's input
+  // schema — and what a good result must satisfy (≤500 chars).
+  taskBrief          Json?   @map("task_brief")
+  acceptanceCriteria String? @map("acceptance_criteria")
+
   negotiationsAsBuyer  Negotiation[] @relation("BuyerAgent")
   negotiationsAsSeller Negotiation[] @relation("SellerAgent")
   ordersAsBuyer        Order[]       @relation("OrderBuyerAgent")
@@ -93,6 +102,11 @@ model NegotiationMessage {
   side          String // buyer | seller
   action        String // offer | counter | accept | reject
   price         Decimal? @db.Decimal
+  // Why this offer (≤280 chars, English) — from the model, or null for rule-based moves.
+  reason        String?
+  source        String   @default("rule") // ai | rule
+  // True when a guardrail clamped the model's price to a limit.
+  adjusted      Boolean  @default(false)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   negotiation Negotiation @relation(fields: [negotiationId], references: [id])
@@ -116,10 +130,12 @@ model Order {
   price         Decimal  @db.Decimal
   status        String   @default("agreed") // agreed | funded
   escrowId      String?  @map("escrow_id")
+  taskId        String?  @unique @map("task_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   negotiation Negotiation @relation(fields: [negotiationId], references: [id])
+  task        Task?       @relation(fields: [taskId], references: [id])
   buyerAgent  Agent       @relation("OrderBuyerAgent", fields: [buyerAgentId], references: [id])
   sellerAgent Agent       @relation("OrderSellerAgent", fields: [sellerAgentId], references: [id])
 
@@ -138,22 +154,112 @@ model EscrowResult {
   escrowId   String   @unique @map("escrow_id")
   capability String
   result     Json
+  // The exact string whose keccak256 is the on-chain resultHash (jsonb
+  // reorders keys, so `result` alone can't reproduce the hash).
+  resultJson String?  @map("result_json")
   resultHash String   @map("result_hash")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("escrow_results")
 }
 
-// Why the buyer raised a dispute — the arbiter's context for ruling. Off-chain
-// (raiseDispute takes no reason); keyed by escrowId like EscrowResult. Only
-// that escrow's on-chain buyer can write it — see routes/disputes.ts.
-model DisputeReason {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  escrowId    String   @unique @map("escrow_id")
-  buyerWallet String   @map("buyer_wallet")
-  reason      String
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+// The task behind an escrow (spec §5): the buyer's brief and acceptance
+// criteria for a capability, plus price and parties. `preimage` is the exact
+// JSON string whose keccak256 is the escrow's on-chain taskHash — anyone can
+// re-hash it. Stored before createEscrow (pending), then linked to the escrow
+// once the API has checked the on-chain taskHash, buyer, seller and amount.
+// Negotiated orders and direct hires both point here.
+model Task {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  capability String
+  brief      Json
+  criteria   String   @default("")
+  price      String // normalized decimal string, exactly as hashed
+  buyer      String // lowercase address
+  seller     String // lowercase address
+  nonce      String
+  preimage   String
+  taskHash   String   @unique @map("task_hash")
+  escrowId   String?  @unique @map("escrow_id")
+  verified   Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@map("dispute_reasons")
+  order Order?
+
+  @@map("tasks")
+}
+
+// A hosted buyer's AI check of a delivered result (spec §10.1). score ≥
+// VERIFY_ACCEPT_THRESHOLD settles, below raises a dispute. provider "none"
+// marks the fallback (AI unavailable → settle without rating).
+model Verification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  escrowId  String   @unique @map("escrow_id")
+  score     Int
+  verdict   String // accept | dispute
+  rationale String
+  provider  String
+  model     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("verifications")
+}
+
+// SellerRated events, indexed from the chain (spec §10.3). sameOwner marks
+// ratings between two agents of one owner wallet — kept for the raw view but
+// left out of displayed reputation and seller selection.
+model Rating {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  escrowId  String   @unique @map("escrow_id")
+  seller    String // lowercase
+  buyer     String // lowercase
+  score     Int
+  source    String // ai (buyer is a hosted agent) | user
+  sameOwner Boolean  @map("same_owner")
+  txHash    String?  @map("tx_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([seller])
+  @@map("ratings")
+}
+
+// A dispute's whole off-chain trail (spec §11), keyed by escrowId. Every text
+// has its hash on-chain (reasonHash, responseHash, resolutionHash); the API
+// only accepts a text whose hash matches the chain.
+model Dispute {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  escrowId    String @unique @map("escrow_id")
+  buyerWallet String @map("buyer_wallet")
+
+  reason     String
+  reasonHash String @map("reason_hash")
+
+  sellerResponse String?   @map("seller_response")
+  responseHash   String?   @map("response_hash")
+  responseSource String?   @map("response_source") // ai | manual | api
+  respondedAt    DateTime? @map("responded_at") @db.Timestamptz(6)
+
+  // AI arbiter recommendation (null fields = not run yet; recUnavailable = AI failed).
+  recVerdict       String?   @map("rec_verdict") // seller | buyer
+  recConfidence    Int?      @map("rec_confidence")
+  recRationale     String?   @map("rec_rationale")
+  recProvider      String?   @map("rec_provider")
+  recModel         String?   @map("rec_model")
+  recommendedAt    DateTime? @map("recommended_at") @db.Timestamptz(6)
+  recUnavailable   Boolean   @default(false) @map("rec_unavailable")
+  overrideDeadline DateTime? @map("override_deadline") @db.Timestamptz(6)
+
+  // Final outcome. rationalePreimage is the exact JSON whose hash is on-chain.
+  resolution        String?   // ai-auto | arbiter-manual | timeout
+  releasedToSeller  Boolean?  @map("released_to_seller")
+  rationalePreimage String?   @map("rationale_preimage")
+  rationaleHash     String?   @map("rationale_hash")
+  resolutionTx      String?   @map("resolution_tx")
+  resolvedAt        DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("disputes")
 }

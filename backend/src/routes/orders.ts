@@ -57,9 +57,12 @@ ordersRouter.patch('/:id/escrow', async (req, res) => {
     return res.status(403).json({ error: 'Only the buyer agent owner (or the agent itself) can attach an escrow to this order' })
   }
 
+  // The task was linked to this escrow (and checked on-chain) just before — see routes/tasks.ts.
+  const task = await prisma.task.findUnique({ where: { escrowId: parsed.data.escrowId }, select: { id: true } })
+
   const updated = await prisma.order.update({
     where: { id: order.id },
-    data: { status: 'funded', escrowId: parsed.data.escrowId },
+    data: { status: 'funded', escrowId: parsed.data.escrowId, ...(task && { taskId: task.id }) },
     include: fullInclude,
   })
   res.json(updated)

@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import type { Prisma } from '@prisma/client'
+import { CAPABILITIES, isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
+import { canonicalize } from '../../../agent-runtime/src/shared/hashes.ts'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { prisma, prismaWithAgentKey } from '../db.ts'
 import { verifyOwnerAuth } from '../auth.ts'
@@ -79,6 +81,13 @@ agentsRouter.post('/', async (req, res) => {
     hostedFields.isOnline = false
     const { getChainHead } = await import('../hostedDeposit.ts')
     hostedFields.escrowScanBlock = await getChainHead()
+  }
+
+  // Store the brief as its schema normalised it (trimmed text, lowercase coin
+  // ids…) — exactly what the seller will execute.
+  const capability = agentData.capabilities[0]
+  if (agentData.taskBrief !== undefined && capability && isCapabilityId(capability)) {
+    agentData.taskBrief = canonicalize(CAPABILITIES[capability].input.parse(agentData.taskBrief))
   }
 
   const agent = await prisma.agent.create({

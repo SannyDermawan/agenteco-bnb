@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import type { Prisma } from '@prisma/client'
-import { createPublicClient, http, keccak256, toHex, type Address } from 'viem'
+import { createPublicClient, http, type Address } from 'viem'
 import { prisma } from '../db.ts'
+import { buildResultPreimage, hashPreimage } from '../../../agent-runtime/src/shared/hashes.ts'
 import { AGENT_ECO_ADDRESS, RPC_URL, appChain } from '../network.ts'
 import { createEscrowResultSchema } from '../schemas/escrowResult.ts'
 
@@ -48,7 +49,10 @@ escrowResultsRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Could not read this escrow on-chain — is the id correct?' })
   }
 
-  const computedHash = keccak256(toHex(JSON.stringify(result)))
+  // Hash the exact JSON text and keep it: jsonb reorders keys, so only the
+  // stored text lets anyone re-hash the result against the chain later.
+  const resultJson = buildResultPreimage(result)
+  const computedHash = hashPreimage(resultJson)
   if (computedHash.toLowerCase() !== onChainHash.toLowerCase()) {
     return res.status(400).json({
       error: 'Result does not match the hash already committed on-chain for this escrow (markDelivered must run first).',
@@ -57,8 +61,8 @@ escrowResultsRouter.post('/', async (req, res) => {
 
   const saved = await prisma.escrowResult.upsert({
     where: { escrowId },
-    create: { escrowId, capability, result: result as Prisma.InputJsonValue, resultHash: computedHash },
-    update: { capability, result: result as Prisma.InputJsonValue, resultHash: computedHash },
+    create: { escrowId, capability, result: result as Prisma.InputJsonValue, resultJson, resultHash: computedHash },
+    update: { capability, result: result as Prisma.InputJsonValue, resultJson, resultHash: computedHash },
   })
   res.status(201).json(saved)
 })
