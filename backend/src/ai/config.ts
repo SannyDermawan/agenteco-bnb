@@ -45,6 +45,19 @@ export const LLM_TIMEOUT_MS = positive('LLM_TIMEOUT_MS', 20_000)
 export const LLM_MAX_WAIT_SECONDS = positive('LLM_MAX_WAIT_SECONDS', 10)
 export const LLM_MAX_CALLS_PER_AGENT_PER_HOUR = positive('LLM_MAX_CALLS_PER_AGENT_PER_HOUR', 60)
 
+function percent(name: string, fallback: number): number {
+  const raw = env(name)
+  if (!raw) return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 0 || n > 100) throw new Error(`${name} must be a whole number 0-100, got: ${raw}`)
+  return n
+}
+
+/** A verification score at or above this settles; below it the buyer disputes (spec §10.1). */
+export const VERIFY_ACCEPT_THRESHOLD = percent('VERIFY_ACCEPT_THRESHOLD', 60)
+/** The AI arbiter's ruling executes on its own only at or above this confidence (spec §11). */
+export const ARBITER_AUTO_MIN_CONFIDENCE = percent('ARBITER_AUTO_MIN_CONFIDENCE', 70)
+
 if (GROQ_MODELS.arbiter === GROQ_MODELS.verify) {
   throw new Error('GROQ_MODEL_ARBITER must differ from GROQ_MODEL_VERIFY (spec §6.4) — the arbiter must not reuse the verifier.')
 }
