@@ -11,7 +11,7 @@ import { OnChainTimeline } from '@/components/app/OnChainTimeline'
 import { EscrowActionPanel } from '@/components/app/EscrowActionPanel'
 import { EscrowResultCard } from '@/components/app/EscrowResultCard'
 import { DisputeReasonCard } from '@/components/app/DisputeReasonCard'
-import { NegotiationTimeline } from '@/components/app/NegotiationTimeline'
+import { NegotiationDealCard, NegotiationTimeline } from '@/components/app/NegotiationTimeline'
 import { FundOrderCard } from '@/components/app/FundOrderCard'
 import { PageFade } from '@/components/app/PageFade'
 import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
@@ -214,6 +214,9 @@ export default function OrderDetailPage() {
             <NeumorphicCard className="p-6">
               <h3 className="mb-4 text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">NEGOTIATION</h3>
               <NegotiationTimeline entries={entries} />
+              {apiOrder.negotiation.status === 'accepted' && (
+                <NegotiationDealCard price={Number(apiOrder.negotiation.agreedPrice ?? apiOrder.price)} escrowId={escrowId} />
+              )}
             </NeumorphicCard>
           </div>
 

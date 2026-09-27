@@ -21,6 +21,8 @@ export interface AgentSummary {
   successRate: number
   reputation: number
   walletAddress?: `0x${string}`
+  /** Run by AgentEco with its own wallet (spec §8.4), vs. a self-hosted agent process. */
+  hosted?: boolean
 }
 
 export type OrderStatus =
@@ -50,7 +52,14 @@ export interface Order {
 export interface NegotiationEntry {
   side: AgentRole
   who: string
-  message: string
+  action: 'offer' | 'counter' | 'accept' | 'reject'
+  /** Null for a reject. */
+  price: number | null
+  /** The negotiating model's one-line reason; null for rule-based moves. */
+  reason: string | null
+  source: 'ai' | 'rule'
+  /** A guardrail clamped the model's price or action to this side's limit. */
+  adjusted: boolean
 }
 
 export type ActivityKind = 'discovery' | 'negotiation' | 'escrow' | 'execution' | 'settlement'

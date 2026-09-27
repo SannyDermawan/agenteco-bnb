@@ -1,31 +1,24 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { parseUnits } from 'viem'
-import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
-import { useAccount, useSignMessage, useWriteContract } from 'wagmi'
+import { useAccount, useSignMessage } from 'wagmi'
 import { NeumorphicCard } from './NeumorphicCard'
-import { wagmiConfig } from '@/lib/web3/config'
 import { appChain } from '@/lib/web3/chain'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
 import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS, formatDuration } from '@/lib/web3/constants'
-import { parseCreatedEscrowId, useUsdtDecimals } from '@/lib/web3/hooks'
-import { InsufficientTokenError, assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { useUsdtDecimals } from '@/lib/web3/hooks'
+import { InsufficientTokenError } from '@/lib/web3/usdtBalance'
+import { HIRE_STEP_LABEL, hireWithTask, type HireStep } from '@/lib/web3/hireWithTask'
 import { GetTestTokensCard } from './GetTestTokensCard'
-import { taskHash } from '@shared/hashes'
+import { TaskBriefForm, briefFromDraft, draftFromBrief, isBriefReady, type BriefDraft } from './TaskBriefForm'
 import { fundOrder, type ApiOrder } from '@/lib/api/orders'
 import { ArrowRightIcon } from './icons'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
+import { isCapabilityId } from '@shared/capabilities/definitions'
 
-type Step = 'idle' | 'checking-balance' | 'creating' | 'checking-allowance' | 'approving' | 'funding' | 'linking' | 'done'
+type Step = 'idle' | HireStep | 'linking-order' | 'done'
 
-const STEP_LABEL: Record<Exclude<Step, 'idle' | 'done'>, string> = {
-  'checking-balance': `Checking ${TOKEN_SYMBOL} balance…`,
-  creating: 'Creating escrow…',
-  'checking-allowance': `Checking ${TOKEN_SYMBOL} allowance…`,
-  approving: 'Approving USDT…',
-  funding: 'Funding escrow…',
-  linking: 'Linking escrow to order…',
+function stepLabel(step: Step): string {
+  return step === 'linking-order' ? 'Linking escrow to order…' : HIRE_STEP_LABEL[step as HireStep]
 }
 
 function Spinner() {
@@ -36,7 +29,6 @@ function Spinner() {
 export function FundOrderCard({ order }: { order: ApiOrder }) {
   const router = useRouter()
   const { address, isConnected, chainId } = useAccount()
-  const { writeContractAsync } = useWriteContract()
   const { signMessageAsync } = useSignMessage()
   const { data: decimals } = useUsdtDecimals()
 
@@ -46,75 +38,41 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
   const [needsTokens, setNeedsTokens] = useState(false)
 
   const seller = order.sellerAgent.walletAddress as `0x${string}` | null
+  const capability = isCapabilityId(order.capability) ? order.capability : null
+  // Starts from the buyer agent's own brief when it has one.
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>(() => draftFromBrief(order.buyerAgent.taskBrief))
+  const [criteria, setCriteria] = useState(order.buyerAgent.acceptanceCriteria ?? '')
+  const [showBriefErrors, setShowBriefErrors] = useState(false)
   const onCorrectChain = chainId === appChain.id
   const busy = step !== 'idle' && step !== 'done'
   const isBuyerOwner = !!address && address.toLowerCase() === order.buyerAgent.ownerWallet.toLowerCase()
 
   async function handleFund() {
-    if (!seller || !address || decimals === undefined) return
+    if (!seller || !address || decimals === undefined || !capability) return
     setError(null)
     setNeedsTokens(false)
 
+    const brief = briefFromDraft(capability, briefDraft)
+    if (!brief.ok || !isBriefReady(capability, briefDraft, criteria)) {
+      setShowBriefErrors(true)
+      return
+    }
+
     try {
-      const amount = parseUnits(order.price, decimals)
-
-      setStep('checking-balance')
-      await assertUsdtBalance(address, amount, decimals)
-
-      setStep('creating')
-      const createHash = await writeContractAsync({
-        address: AGENT_ECO_ADDRESS,
-        abi: AGENT_ECO_ABI,
-        functionName: 'createEscrow',
-        args: [
-          seller,
-          amount,
-          EXECUTION_WINDOW_SECONDS,
-          REVIEW_WINDOW_SECONDS,
-          taskHash({
-            capability: order.capability,
-            brief: {},
-            price: order.price,
-            buyer: address,
-            seller,
-            nonce: crypto.randomUUID(),
-          }),
-        ],
-      })
-      const createReceipt = await waitForTransactionReceipt(wagmiConfig, { hash: createHash })
-      const escrowId = parseCreatedEscrowId(createReceipt)
-      if (escrowId === null) throw new Error('Could not read the new escrow id from the transaction receipt.')
-
-      setStep('checking-allowance')
-      const allowance = await readContract(wagmiConfig, {
-        address: USDT_ADDRESS,
-        abi: ERC20_ABI,
-        functionName: 'allowance',
-        args: [address, AGENT_ECO_ADDRESS],
+      const signer = { address, signMessageAsync }
+      const { escrowId } = await hireWithTask({
+        signer,
+        decimals,
+        seller,
+        price: order.price,
+        capability,
+        brief: brief.brief,
+        criteria: criteria.trim(),
+        onStep: setStep,
       })
 
-      if (allowance < amount) {
-        setStep('approving')
-        const approveHash = await writeContractAsync({
-          address: USDT_ADDRESS,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [AGENT_ECO_ADDRESS, amount],
-        })
-        await waitForTransactionReceipt(wagmiConfig, { hash: approveHash })
-      }
-
-      setStep('funding')
-      const fundHash = await writeContractAsync({
-        address: AGENT_ECO_ADDRESS,
-        abi: AGENT_ECO_ABI,
-        functionName: 'fundEscrow',
-        args: [escrowId],
-      })
-      await waitForTransactionReceipt(wagmiConfig, { hash: fundHash })
-
-      setStep('linking')
-      await fundOrder(order.id, { address, signMessageAsync }, escrowId.toString())
+      setStep('linking-order')
+      await fundOrder(order.id, signer, escrowId.toString())
 
       setStep('done')
       router.push(`/app/orders/${order.id}`)
@@ -132,6 +90,10 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
       {!seller ? (
         <p className="mt-4 text-[13px] leading-relaxed text-[#8B8D96]">
           The seller agent hasn&apos;t linked an on-chain wallet yet, so this order can&apos;t be funded on-chain.
+        </p>
+      ) : !capability ? (
+        <p className="mt-4 text-[13px] leading-relaxed text-[#8B8D96]">
+          This order is for a capability that is no longer supported, so it can&apos;t be funded.
         </p>
       ) : (
         <>
@@ -156,6 +118,20 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
             </div>
           </div>
 
+          {isBuyerOwner && (
+            <div className="mt-5 border-t border-white/[0.06] pt-5">
+              <p className="mb-3 text-[13px] font-medium text-[#F5F5F7]">Task Brief</p>
+              <TaskBriefForm
+                capability={capability}
+                draft={briefDraft}
+                onDraftChange={setBriefDraft}
+                criteria={criteria}
+                onCriteriaChange={setCriteria}
+                showErrors={showBriefErrors}
+              />
+            </div>
+          )}
+
           {!isConnected ? (
             <p className="mt-5 rounded-xl border border-white/[0.06] bg-[#0D0F14] px-3 py-2.5 text-[12.5px] text-[#8B8D96]">
               Connect your wallet from the top bar to fund this order.
@@ -178,7 +154,7 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
               {busy ? (
                 <>
                   <Spinner />
-                  {STEP_LABEL[step as Exclude<Step, 'idle' | 'done'>]}
+                  {stepLabel(step)}
                 </>
               ) : (
                 <>

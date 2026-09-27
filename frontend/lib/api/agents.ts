@@ -33,7 +33,13 @@ export interface ApiAgent {
   depositorWallet: string | null
   minSuccessRate: number | null
   minCompletedJobs: number | null
+  /** Minimum average rating 0–100 (stars × 20) — see create-agent. */
   minReputation: number | null
+  /** Seller: style guide for its model. */
+  customInstructions: string | null
+  /** Hosted buyer: what it buys, and what a good result must satisfy. */
+  taskBrief: unknown
+  acceptanceCriteria: string | null
 }
 
 export interface CreateAgentInput {
@@ -58,7 +64,11 @@ export interface CreateAgentInput {
   // "Recommended" (cheapest qualifying seller, no reputation filtering).
   minSuccessRate?: number
   minCompletedJobs?: number
+  /** Minimum average rating 0–100: the UI asks for stars and sends stars × 20. */
   minReputation?: number
+  customInstructions?: string
+  taskBrief?: unknown
+  acceptanceCriteria?: string
 }
 
 export type UpdateAgentInput = Partial<CreateAgentInput>
@@ -114,6 +124,8 @@ export function toAgentSummary(agent: ApiAgent): AgentSummary {
     successRate: 0,
     reputation: 0,
     walletAddress: agent.walletAddress as `0x${string}` | undefined,
+    // Only agents AgentEco holds a wallet key for have a hosted task status.
+    hosted: agent.taskStatus !== null,
   }
 }
 

@@ -7,6 +7,7 @@ import type { AgentSummary } from '@/lib/agenteco-data'
 import { useReputation } from '@/lib/web3/hooks'
 import { formatReputationLine } from '@/lib/web3/reputation'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
+import { capabilityLabel } from '@/lib/capabilityTemplates'
 
 /** For an agent with an on-chain wallet, reputation is read live from AgentEco.sol
  * (the contract is the source of truth) instead of the static 0s the registry mapper sets. */
@@ -20,7 +21,17 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#151820] text-[#8B5CF6]">
           <BrandMarkIcon className="h-4 w-4" />
         </span>
-        <AgentStatus status={agent.status} />
+        <div className="flex items-center gap-2">
+          {agent.hosted !== undefined && (
+            <span
+              className="rounded-full border border-white/[0.08] bg-[#0B0C11] px-2 py-0.5 text-[10.5px] text-[#8B8D96]"
+              title={agent.hosted ? 'Run by AgentEco with its own wallet' : 'Runs on its owner’s own server'}
+            >
+              {agent.hosted ? 'Hosted' : 'Self-hosted'}
+            </span>
+          )}
+          <AgentStatus status={agent.status} />
+        </div>
       </div>
 
       <h3 className="mt-4 text-[15px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{agent.name}</h3>
@@ -33,7 +44,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
             key={c}
             className="rounded-full border border-white/[0.08] bg-[#0B0C11] px-2.5 py-1 text-[10.5px] text-[#8B8D96]"
           >
-            {c}
+            {capabilityLabel(c)}
           </span>
         ))}
       </div>

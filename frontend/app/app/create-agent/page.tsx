@@ -1,31 +1,26 @@
 'use client'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { PageFade } from '@/components/app/PageFade'
 import { ActivateAgentCard } from '@/components/app/ActivateAgentCard'
 import { ArrowRightIcon } from '@/components/app/icons'
 import { createAgent, type ApiAgent } from '@/lib/api/agents'
+import { CharCount, FIELD_CLASS, Field } from '@/components/app/FormField'
+import { EMPTY_BRIEF_DRAFT, TaskBriefForm, briefFromDraft, type BriefDraft } from '@/components/app/TaskBriefForm'
 import { CAPABILITY_TEMPLATES } from '@/lib/capabilityTemplates'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
-
-const FIELD_CLASS =
-  'w-full rounded-xl border border-white/[0.08] bg-[#0B0C11] px-3.5 py-2.5 text-[13.5px] text-[#F5F5F7] shadow-[inset_2px_2px_6px_rgba(0,0,0,.4)] placeholder:text-[#54565F] focus:outline-none focus:border-[#5B5FEF]/50'
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-[12.5px] font-medium text-[#8B8D96]">{label}</span>
-      {children}
-    </label>
-  )
-}
+import { LIMITS, type CapabilityId } from '@shared/capabilities/definitions'
 
 export default function CreateAgentPage() {
   const { address, isConnected } = useAccount()
   const { signMessageAsync } = useSignMessage()
   const [role, setRole] = useState<'buyer' | 'seller'>('seller')
-  const [capabilityKey, setCapabilityKey] = useState(CAPABILITY_TEMPLATES[0].key)
+  const [capabilityKey, setCapabilityKey] = useState<CapabilityId>(CAPABILITY_TEMPLATES[0].key)
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>(EMPTY_BRIEF_DRAFT)
+  const [criteria, setCriteria] = useState('')
+  const [customInstructions, setCustomInstructions] = useState('')
+  const [showBriefErrors, setShowBriefErrors] = useState(false)
   const [maxBudgetInput, setMaxBudgetInput] = useState('')
   const [buyerFilterMode, setBuyerFilterMode] = useState<'recommended' | 'custom'>('recommended')
   const [createdAgent, setCreatedAgent] = useState<ApiAgent | null>(null)
@@ -63,15 +58,25 @@ export default function CreateAgentPage() {
             category: selectedTemplate.category,
             service: selectedTemplate.label,
             minimumPrice: negotiationLimit,
+            ...(customInstructions.trim() && { customInstructions: customInstructions.trim() }),
           }
         )
         setCreatedAgent(agent)
       } else {
+        // The brief is checked here, again by the API, and again by the
+        // seller before it accepts the job (spec §7).
+        const brief = briefFromDraft(capabilityKey, briefDraft)
+        if (!brief.ok || criteria.trim().length > LIMITS.textChars) {
+          setShowBriefErrors(true)
+          setError('Fix the highlighted Task Brief fields first.')
+          return
+        }
         const maxBudget = Number(form.get('maxBudget'))
         const isCustom = buyerFilterMode === 'custom'
         const minSuccessRateRaw = form.get('minSuccessRate')
         const minCompletedJobsRaw = form.get('minCompletedJobs')
-        const minReputationRaw = form.get('minReputation')
+        // Stars in the form; stored as the minimum average rating 0–100.
+        const minStarsRaw = form.get('minStars')
 
         const agent = await createAgent(
           { address, signMessageAsync },
@@ -83,9 +88,11 @@ export default function CreateAgentPage() {
             price: 0,
             maxBudget,
             capabilities: [selectedTemplate.key],
+            taskBrief: brief.brief,
+            ...(criteria.trim() && { acceptanceCriteria: criteria.trim() }),
             ...(isCustom && minSuccessRateRaw ? { minSuccessRate: Number(minSuccessRateRaw) } : {}),
             ...(isCustom && minCompletedJobsRaw ? { minCompletedJobs: Number(minCompletedJobsRaw) } : {}),
-            ...(isCustom && minReputationRaw ? { minReputation: Number(minReputationRaw) } : {}),
+            ...(isCustom && minStarsRaw ? { minReputation: Number(minStarsRaw) * 20 } : {}),
           }
         )
         setCreatedAgent(agent)
@@ -124,7 +131,7 @@ export default function CreateAgentPage() {
         <NeumorphicCard className="p-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <Field label="Agent Name">
-              <input required name="name" type="text" placeholder="e.g. IndoPrice Agent" className={FIELD_CLASS} />
+              <input required name="name" type="text" placeholder={role === 'seller' ? 'e.g. Translator Pro' : 'e.g. Weekly Market Brief'} className={FIELD_CLASS} />
             </Field>
 
             <Field label="Role">
@@ -144,7 +151,7 @@ export default function CreateAgentPage() {
                 name="capability"
                 className={FIELD_CLASS}
                 value={capabilityKey}
-                onChange={(e) => setCapabilityKey(e.target.value)}
+                onChange={(e) => setCapabilityKey(e.target.value as CapabilityId)}
               >
                 {CAPABILITY_TEMPLATES.map((t) => (
                   <option key={t.key} value={t.key}>
@@ -154,12 +161,39 @@ export default function CreateAgentPage() {
               </select>
             </Field>
 
-            {role === 'seller' && (
-              <Field label="Description">
-                <p className="rounded-xl border border-white/[0.06] bg-[#0B0C11]/60 px-3.5 py-2.5 text-[13px] text-[#8B8D96]">
-                  {selectedTemplate.description}
-                </p>
-              </Field>
+            {role === 'seller' ? (
+              <>
+                <Field label="Description">
+                  <p className="rounded-xl border border-white/[0.06] bg-[#0B0C11]/60 px-3.5 py-2.5 text-[13px] text-[#8B8D96]">
+                    {selectedTemplate.description}
+                  </p>
+                </Field>
+                <Field
+                  label="Custom Instructions (optional)"
+                  error={customInstructions.trim().length > LIMITS.textChars ? `At most ${LIMITS.textChars} characters` : undefined}
+                  hint={<CharCount value={customInstructions} max={LIMITS.textChars} />}
+                >
+                  <textarea
+                    rows={3}
+                    value={customInstructions}
+                    onChange={(e) => setCustomInstructions(e.target.value)}
+                    placeholder="Style and focus for your agent's model, e.g. “Formal business tone; keep product names untranslated.”"
+                    className={FIELD_CLASS}
+                  />
+                </Field>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-white/[0.06] bg-[#0B0C11]/40 p-4">
+                <p className="mb-3 text-[13px] font-medium text-[#F5F5F7]">Task Brief</p>
+                <TaskBriefForm
+                  capability={capabilityKey}
+                  draft={briefDraft}
+                  onDraftChange={setBriefDraft}
+                  criteria={criteria}
+                  onCriteriaChange={setCriteria}
+                  showErrors={showBriefErrors}
+                />
+              </div>
             )}
 
             {role === 'seller' ? (
@@ -218,7 +252,7 @@ export default function CreateAgentPage() {
                   <p className="mt-1.5 text-[12px] text-[#8B8D96]">
                     {buyerFilterMode === 'recommended'
                       ? 'Picks the cheapest qualifying seller within budget — no reputation filtering.'
-                      : 'Also requires the seller to meet the on-chain reputation thresholds below.'}
+                      : 'Also requires the seller to meet the on-chain thresholds below. A minimum rating skips sellers nobody has rated yet.'}
                   </p>
                 </Field>
 
@@ -230,8 +264,15 @@ export default function CreateAgentPage() {
                     <Field label="Min Completed Jobs">
                       <input name="minCompletedJobs" type="number" min="0" step="1" placeholder="5" className={FIELD_CLASS} />
                     </Field>
-                    <Field label="Min Reputation (%)">
-                      <input name="minReputation" type="number" min="0" max="100" step="1" placeholder="80" className={FIELD_CLASS} />
+                    <Field label="Min Rating">
+                      <select name="minStars" defaultValue="" className={FIELD_CLASS}>
+                        <option value="">Any</option>
+                        {[1, 2, 3, 4, 5].map((stars) => (
+                          <option key={stars} value={stars}>
+                            {'★'.repeat(stars)} {stars === 5 ? '5' : `${stars}+`}
+                          </option>
+                        ))}
+                      </select>
                     </Field>
                   </div>
                 )}

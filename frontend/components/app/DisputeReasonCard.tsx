@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount, useSignMessage } from 'wagmi'
 import { NeumorphicCard } from './NeumorphicCard'
-import { getDisputeReason, submitDisputeReason } from '@/lib/api/disputes'
+import { forgetPendingReason, getDisputeReason, readPendingReason, submitDisputeReason } from '@/lib/api/disputes'
 import { useIsArbiter } from '@/lib/web3/hooks'
 
 const DISPUTED = 4 // AgentEco.sol OrderStatus
@@ -28,6 +28,11 @@ export function DisputeReasonCard({ escrowId, status, buyer }: { escrowId: bigin
   })
 
   const [draft, setDraft] = useState('')
+  // Prefill with the exact text the dispute transaction hashed, if this browser sent it.
+  useEffect(() => {
+    const pending = readPendingReason(escrowId.toString())
+    if (pending) setDraft(pending)
+  }, [escrowId])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -40,6 +45,7 @@ export function DisputeReasonCard({ escrowId, status, buyer }: { escrowId: bigin
     setError(null)
     try {
       await submitDisputeReason({ address, signMessageAsync }, escrowId.toString(), draft.trim())
+      forgetPendingReason(escrowId.toString())
       await queryClient.invalidateQueries({ queryKey: ['disputeReason', escrowId.toString()] })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save your reason.')

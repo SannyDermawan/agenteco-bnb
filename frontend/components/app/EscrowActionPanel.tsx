@@ -6,7 +6,7 @@ import { useAccount, useSignMessage, useWriteContract } from 'wagmi'
 import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { wagmiConfig } from '@/lib/web3/config'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
-import { submitDisputeReason } from '@/lib/api/disputes'
+import { forgetPendingReason, rememberPendingReason, submitDisputeReason } from '@/lib/api/disputes'
 import { textHash } from '@shared/hashes'
 import {
   useAcceptAndSettle,
@@ -126,6 +126,7 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
     }
     setDisputePending(true)
     setDisputeError(null)
+    rememberPendingReason(escrowId.toString(), reason)
     try {
       const hash = await writeContractAsync({
         address: AGENT_ECO_ADDRESS,
@@ -143,6 +144,7 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
     // fails, the dispute card offers the buyer a retry.
     try {
       await submitDisputeReason({ address, signMessageAsync }, escrowId.toString(), reason)
+      forgetPendingReason(escrowId.toString())
     } catch {
       // Surfaced by DisputeReasonCard's "add your reason" prompt.
     }

@@ -127,7 +127,7 @@ Example: a seller lists at `0.30` with a minimum of `0.24`. A buyer with a max b
 | API | Node.js, Express 5, Prisma 7, Supabase Postgres | Agent registry, negotiations, orders, delivered results, dispute reasons |
 | Host | Node.js | Runs every hosted buyer and seller agent with its own encrypted wallet |
 | Keeper | Node.js | Calls `claimExecutionTimeout` and `finalizeAfterReviewWindow` when deadlines pass |
-| Agent runtime | TypeScript library | Shared negotiation policy, capability matching, demo task execution, onchain client |
+| Agent runtime | TypeScript library | Shared negotiation policy, capability schemas and code-side execution, onchain client |
 
 **Authentication.** Every write to the API must be signed by the wallet that owns the resource (`x-owner-wallet`, `x-signature`, `x-timestamp`, valid for 60 seconds). The server recovers the signer and checks it against the owner. No passwords, no API keys.
 
@@ -208,7 +208,7 @@ The whole stack switches networks through one setting (`NETWORK` on the backend,
 ### 2. Launch a hosted seller agent
 
 1. Go to **Create Agent** and pick **Role → Seller**.
-2. Choose a **Capability** (Product Price Research, Data Analysis, Translation or Task Automation), then set **Pricing** (e.g. `0.30`) and **Negotiation Limit** (e.g. `0.24`, the lowest price it will accept).
+2. Choose a **Capability** (Translation, Data Analysis, Crypto Market Brief or Transaction Explainer), optionally add **Custom Instructions**, then set **Pricing** (e.g. `0.30`) and **Negotiation Limit** (e.g. `0.24`, the lowest price it will accept).
 3. Click **Create Agent** and sign the message in MetaMask.
 4. On the activation screen, click **Top Up Gas & Activate Agent**. This sends 0.08 BOT to the agent's own wallet.
 5. Your seller is now **Online** in the **Marketplace**. It answers negotiations and executes jobs on its own, and forwards settled earnings to your wallet.
@@ -216,8 +216,8 @@ The whole stack switches networks through one setting (`NETWORK` on the backend,
 ### 3. Launch a hosted buyer agent (fully autonomous deal)
 
 1. Go to **Create Agent** and pick **Role → Buyer**.
-2. Under **What should it buy?** choose the same capability as an online seller, and set a **Max Budget** (e.g. `0.28`).
-3. **Seller Selection**: *Recommended* picks the cheapest qualifying seller. *Custom* also requires a minimum success rate, number of completed jobs and reputation.
+2. Under **What should it buy?** choose the same capability as an online seller, fill in its **Task Brief** (the form follows that capability's inputs) and optional **Acceptance Criteria**, and set a **Max Budget** (e.g. `0.28`).
+3. **Seller Selection**: *Recommended* picks the cheapest qualifying seller. *Custom* also requires a minimum success rate, number of completed jobs and star rating.
 4. Click **Create Agent**, then **Deposit & Activate Agent**. MetaMask asks for two transactions: the USDT deposit (your max budget) and the 0.08 BOT gas top-up.
 5. Watch the agent work, with no further clicks from you:
    - **Agent Activity** and the order page show the offers and counter-offers.
@@ -337,7 +337,7 @@ cd backend && npm install && npm test         # keeper decision logic
 
 ## MVP assumptions and limitations
 
-- **Demo task execution.** The escrow, negotiation and settlement are real. The work itself (price research, data analysis, translation, task automation) returns canned demo results.
+- **Four fixed capabilities.** Translation, data analysis, crypto market briefs and transaction explanations: code computes the facts (CSV statistics, CoinGecko data, decoded transactions) and an AI model (Groq, with Gemini as fallback) writes the prose. Without a model, the three data capabilities deliver the code-only result marked "AI unavailable"; translation is not delivered and the buyer is refunded.
 - **Custodial hosted agents.** Hosted agent keys are encrypted at rest, but AgentEco's host can sign for them. This is a convenience trade-off for the MVP, not a production custody model.
 - **Single trusted arbiter.** One wallet resolves disputes, and a dispute has no time limit.
 - **Off-chain negotiation.** Offers live in the API database. Only the agreed escrow and its outcome are onchain.

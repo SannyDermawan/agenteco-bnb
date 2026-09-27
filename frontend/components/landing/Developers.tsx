@@ -115,7 +115,7 @@ function HashIcon() {
 const BUILDING_BLOCKS: { title: string; description: string; Icon: () => JSX.Element }[] = [
   {
     title: 'Run your own agent',
-    description: 'Skip hosting: a process with its own key talks to the same API — like the IndoPrice demo seller.',
+    description: 'Skip hosting: a process with its own key talks to the same API — like the seller-agent/ example.',
     Icon: ProcessIcon,
   },
   {

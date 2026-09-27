@@ -39,3 +39,27 @@ export async function submitDisputeReason(signer: WalletSigner, escrowId: string
   })
   return parseOrThrow(res)
 }
+
+// The on-chain reasonHash commits to the exact text, so a retry after a failed
+// save must resend the very same string. It's kept in this browser until saved.
+const pendingKey = (escrowId: string) => `agenteco:dispute-reason:${escrowId}`
+
+export function rememberPendingReason(escrowId: string, reason: string): void {
+  try {
+    localStorage.setItem(pendingKey(escrowId), reason)
+  } catch {}
+}
+
+export function readPendingReason(escrowId: string): string {
+  try {
+    return localStorage.getItem(pendingKey(escrowId)) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function forgetPendingReason(escrowId: string): void {
+  try {
+    localStorage.removeItem(pendingKey(escrowId))
+  } catch {}
+}

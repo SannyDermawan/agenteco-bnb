@@ -32,10 +32,10 @@ function CardHeading({ eyebrow, title, description }: { eyebrow: string; title: 
 /* ---------- Discovery: your agent fanning out to real capabilities ---------- */
 
 const LISTINGS = [
-  { x: 64, y: 14, label: 'Product Price Research', price: '0.20' },
-  { x: 86, y: 38, label: 'Data Analysis', price: '0.30' },
-  { x: 86, y: 64, label: 'Translation', price: '0.25' },
-  { x: 64, y: 88, label: 'Task Automation', price: '0.30' },
+  { x: 64, y: 14, label: 'Translation', price: '0.10' },
+  { x: 86, y: 38, label: 'Data Analysis', price: '0.25' },
+  { x: 86, y: 64, label: 'Crypto Market Brief', price: '0.20' },
+  { x: 64, y: 88, label: 'Transaction Explainer', price: '0.15' },
 ]
 
 function DiscoveryDiagram() {

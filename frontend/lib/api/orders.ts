@@ -1,6 +1,7 @@
 import type { ApiAgent } from './agents'
 import { buildAuthHeaders, type WalletSigner } from './authHeaders'
 import type { ActivityEntry, NegotiationEntry, Order, OrderStatus } from '@/lib/agenteco-data'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 export type OrderDbStatus = 'agreed' | 'funded'
 
@@ -9,6 +10,9 @@ export interface ApiNegotiationMessage {
   side: 'buyer' | 'seller'
   action: 'offer' | 'counter' | 'accept' | 'reject'
   price: string | null
+  reason: string | null
+  source: 'ai' | 'rule'
+  adjusted: boolean
   createdAt: string
 }
 
@@ -76,18 +80,15 @@ export function toOrderRow(order: ApiOrder): Order {
   }
 }
 
-const ACTION_LABEL: Record<ApiNegotiationMessage['action'], (price: string | null) => string> = {
-  offer: (price) => `Offered ${price} USDT`,
-  counter: (price) => `Countered with ${price} USDT`,
-  accept: (price) => `Accepted at ${price} USDT`,
-  reject: () => 'Rejected',
-}
-
 export function toNegotiationEntries(order: ApiOrder): NegotiationEntry[] {
   return order.negotiation.messages.map((m) => ({
     side: m.side,
     who: m.side === 'buyer' ? order.buyerAgent.name : order.sellerAgent.name,
-    message: ACTION_LABEL[m.action](m.price),
+    action: m.action,
+    price: m.price === null ? null : Number(m.price),
+    reason: m.reason ?? null,
+    source: m.source === 'ai' ? 'ai' : 'rule',
+    adjusted: !!m.adjusted,
   }))
 }
 
@@ -108,11 +109,11 @@ export function buildActivityEntries(orders: ApiOrder[]): (ActivityEntry & { at:
 
       let message: string
       if (i === 0) {
-        message = `${who} discovered ${other} and offered ${m.price} USDT`
+        message = `${who} discovered ${other} and offered ${m.price} ${TOKEN_SYMBOL}`
       } else if (m.action === 'counter') {
-        message = `${who} countered with ${m.price} USDT`
+        message = `${who} countered with ${m.price} ${TOKEN_SYMBOL}`
       } else if (m.action === 'accept') {
-        message = `${who} accepted at ${m.price} USDT`
+        message = `${who} accepted at ${m.price} ${TOKEN_SYMBOL}`
       } else {
         message = `${who} rejected the offer`
       }
