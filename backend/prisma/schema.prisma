@@ -196,7 +196,8 @@ model Task {
 model Verification {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   escrowId  String   @unique @map("escrow_id")
-  score     Int
+  // Null when no model answered (provider "none": accepted unscored, not rated).
+  score     Int?
   verdict   String // accept | dispute
   rationale String
   provider  String

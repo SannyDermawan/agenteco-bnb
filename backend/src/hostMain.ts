@@ -1,6 +1,8 @@
 import { log, logError, setLogTag } from './log.ts'
 import { runHostCycleOnce } from './host/buyerTaskHost.ts'
 import { runSellerHostCycleOnce } from './host/sellerTaskHost.ts'
+import { initArbiter, runArbiterCycleOnce } from './host/arbiter.ts'
+import { indexRecentRatings } from './ratings.ts'
 import { createPublicClient, http } from 'viem'
 import { AGENT_ECO_ADDRESS, RPC_URL, TOKEN_SYMBOL, USDT_ADDRESS, assertRpcMatchesNetwork, appChain } from './network.ts'
 import {
@@ -12,14 +14,15 @@ import {
 setLogTag('HOST')
 
 const INTERVAL_MS = Number(process.env.HOST_INTERVAL_MS ?? 5000)
+const RATING_SCAN_MS = 60_000
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * Multi-tenant runtime for hosted buyer tasks ("make an agent buy for me")
- * and hosted seller agents —
+ * Multi-tenant runtime for hosted buyer tasks ("make an agent buy for me"),
+ * hosted seller agents and the AI arbiter —
  * the platform-run counterpart to the standalone buyer-agent/seller-agent
  * processes, which self-custody their own keys instead. Requires the API
  * server (src/server.ts) to already be running on the same host, since it
@@ -35,6 +38,7 @@ async function main(): Promise<void> {
   await assertRpcMatchesNetwork(() => publicClient.getChainId())
   await assertDurationsFitContract(publicClient)
   log(`Escrow windows: execution ${EXECUTION_WINDOW_SECONDS}s, review ${REVIEW_WINDOW_SECONDS}s`, 'HOST')
+  await initArbiter()
 
   let running = true
   const shutdown = (signal: string) => {
@@ -44,6 +48,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('SIGTERM', () => shutdown('SIGTERM'))
 
+  let lastRatingScan = 0
   while (running) {
     try {
       await runHostCycleOnce()
@@ -54,6 +59,20 @@ async function main(): Promise<void> {
       await runSellerHostCycleOnce()
     } catch (error) {
       logError('Seller host cycle failed', error, 'HOST')
+    }
+    try {
+      await runArbiterCycleOnce()
+    } catch (error) {
+      logError('Arbiter cycle failed', error, 'HOST')
+    }
+    // Ratings made outside our own flows, about once a minute.
+    if (Date.now() - lastRatingScan >= RATING_SCAN_MS) {
+      lastRatingScan = Date.now()
+      try {
+        await indexRecentRatings(publicClient)
+      } catch (error) {
+        logError('Rating index failed', error, 'HOST')
+      }
     }
     if (running) await sleep(INTERVAL_MS)
   }

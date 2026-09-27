@@ -11,12 +11,19 @@ import {
   markOnchainDelivered,
   getEscrowStatus,
   publishEscrowResult,
+  getDispute,
+  getEscrowDisputeInfo,
+  getEscrowHashes,
+  submitDisputeResponseOnchain,
+  submitDisputeResponseText,
   type OnchainClients,
 } from '../../../agent-runtime/src/index.ts'
+import { SELLER_RESPONSE_WINDOW_SECONDS } from '../../../agent-runtime/src/durations.ts'
+import { defendDispute } from '../ai/judge.ts'
 import { NEGOTIATION_ROUNDS } from '../../../agent-runtime/src/runtime.ts'
 import { getTaskByEscrow } from '../../../agent-runtime/src/tasksClient.ts'
 import { AGENT_ECO_ABI } from '../../../agent-runtime/src/shared/abi.generated.ts'
-import { hashPreimage, resultHash } from '../../../agent-runtime/src/shared/hashes.ts'
+import { hashPreimage, resultHash, textHash } from '../../../agent-runtime/src/shared/hashes.ts'
 import { isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
 import { prepareJob, runJob } from '../capabilities/execute.ts'
 import { decideTurn } from '../ai/negotiate.ts'
@@ -67,6 +74,15 @@ const unpublished = new Map<bigint, { capability: string; result: Record<string,
 
 /** Funded escrows already logged as waiting for their brief — logged once, not every cycle. */
 const waitingForTask = new Set<bigint>()
+
+/** Disputes this seller has answered, or decided not to answer. */
+const defended = new Set<bigint>()
+/** Responses committed on-chain whose text hasn't reached the API yet (exact string, retried). */
+const pendingResponses = new Map<bigint, string>()
+/** Delivered escrows logged as missing their published result. */
+const missingResultLogged = new Set<bigint>()
+
+const ZERO_HASH = `0x${'0'.repeat(64)}`
 
 const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
 
@@ -172,21 +188,92 @@ async function advanceEscrow(
     )
     unpublished.set(escrowId, { capability: task.capability, result })
     await publishPending(label, escrowId)
-    return !unpublished.has(escrowId)
+    // Keep watching: the buyer can still dispute a delivered result.
+    return false
   }
 
   if (status === ON_CHAIN_DELIVERED || status === ON_CHAIN_SETTLED || status === ON_CHAIN_DISPUTED) {
-    if (unpublished.has(escrowId)) return publishPending(label, escrowId)
-    if (!(await hasPublishedResult(escrowId))) {
+    if (unpublished.has(escrowId)) {
+      await publishPending(label, escrowId)
+    } else if (!missingResultLogged.has(escrowId) && !(await hasPublishedResult(escrowId))) {
       // Delivered before a restart whose publish never landed: the exact
       // result is gone, so there's nothing to re-send.
+      missingResultLogged.add(escrowId)
       log(`[host:${label}] escrow #${escrowId}: delivered but its result was never published and is no longer in memory.`)
     }
-    return true
+    if (status === ON_CHAIN_DISPUTED) await defendIfDue(agentRow, onchain, escrowId)
+    // Done once paid out; a delivered or disputed escrow is still open.
+    return status === ON_CHAIN_SETTLED && !unpublished.has(escrowId)
   }
 
   // CREATED (not funded yet) keeps waiting; REFUNDED is terminal.
   return status !== ON_CHAIN_CREATED
+}
+
+async function sendPendingResponse(label: string, onchain: OnchainClients, escrowId: bigint): Promise<void> {
+  const response = pendingResponses.get(escrowId)
+  if (!response) return
+  try {
+    await submitDisputeResponseText(API_URL, onchain.account, escrowId.toString(), response, 'ai')
+    pendingResponses.delete(escrowId)
+    defended.add(escrowId)
+    log(`[host:${label}] escrow #${escrowId}: dispute response saved.`)
+  } catch (error) {
+    logError(`[host:${label}] escrow #${escrowId}: dispute response not saved yet — will retry`, error, 'HOST')
+  }
+}
+
+/**
+ * The hosted seller's side of a dispute (spec §11 step 2): once the buyer's
+ * reason is readable, the model writes a response grounded in the brief and
+ * the result; its hash goes on-chain, then the text to the API. Only within
+ * SELLER_RESPONSE_WINDOW_SECONDS — after that the arbiter decides without it.
+ */
+async function defendIfDue(agentRow: HostedSellerAgentRow, onchain: OnchainClients, escrowId: bigint): Promise<void> {
+  const label = agentRow.name
+  if (pendingResponses.has(escrowId)) return sendPendingResponse(label, onchain, escrowId)
+  if (defended.has(escrowId)) return
+
+  const { disputeResponseHash } = await getEscrowHashes(onchain, escrowId)
+  if (disputeResponseHash !== ZERO_HASH) {
+    defended.add(escrowId) // answered before a restart
+    return
+  }
+  const { disputedAt } = await getEscrowDisputeInfo(onchain, escrowId)
+  if (BigInt(Math.floor(Date.now() / 1000)) > disputedAt + BigInt(SELLER_RESPONSE_WINDOW_SECONDS)) {
+    defended.add(escrowId)
+    log(`[host:${label}] escrow #${escrowId}: the response window has passed — not responding.`)
+    return
+  }
+
+  // The buyer's reason reaches the API right after raiseDispute.
+  const dispute = await getDispute(API_URL, escrowId.toString())
+  if (!dispute) return
+  const [task, resultRes] = await Promise.all([
+    getTaskByEscrow(API_URL, escrowId.toString()),
+    fetch(`${API_URL}/escrow-results/${escrowId}`),
+  ])
+  const stored = resultRes.ok ? ((await resultRes.json()) as { resultJson: string | null }) : null
+  if (!task || !stored?.resultJson || !isCapabilityId(task.capability)) {
+    defended.add(escrowId)
+    log(`[host:${label}] escrow #${escrowId}: brief or result unavailable — not responding.`)
+    return
+  }
+
+  const defense = await defendDispute(
+    { capability: task.capability, brief: task.brief, criteria: task.criteria, result: JSON.parse(stored.resultJson) },
+    dispute.reason,
+    { agentId: agentRow.id }
+  )
+  if (!defense) {
+    defended.add(escrowId)
+    log(`[host:${label}] escrow #${escrowId}: AI unavailable — no dispute response; the arbiter sees "no response".`)
+    return
+  }
+  log(`[host:${label}] escrow #${escrowId}: answering the dispute (${defense.provider}/${defense.model})…`)
+  await submitDisputeResponseOnchain(onchain, escrowId, textHash(defense.response))
+  pendingResponses.set(escrowId, defense.response)
+  await sendPendingResponse(label, onchain, escrowId)
 }
 
 /**

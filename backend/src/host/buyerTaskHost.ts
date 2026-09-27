@@ -15,15 +15,13 @@ import {
   listOrdersForAgent,
   attachEscrowToOrder,
   createOnchainClients,
-  createAndFundEscrow,
-  acceptAndSettleOnchain,
-  getEscrowStatus,
   type OnchainClients,
 } from '../../../agent-runtime/src/index.ts'
 import { decryptAgentKey } from '../agentKeyCrypto.ts'
 import { prisma, prismaWithAgentKey } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { selectSeller } from './selectSeller.ts'
+import { reviewEscrow } from './buyerReview.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
 import { RPC_URL, TOKEN_SYMBOL, USDT_ADDRESS } from '../network.ts'
 
@@ -38,7 +36,6 @@ function normalizeApiUrl(raw: string | undefined): string {
   if (!value) return ''
   return /^https?:\/\//i.test(value) ? value : `https://${value}`
 }
-const ON_CHAIN_DELIVERED = 3
 
 const ERC20_ABI = [
   {
@@ -269,18 +266,19 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
     return
   }
 
-  // 4. Funded and delivered? Accept, settle, and mark the task done.
+  // 4. Funded: verify the delivery, then settle + rate or dispute (spec §10.1).
+  //    The task is done once its escrow is final; whatever the escrow returned
+  //    to the agent wallet (a refund) goes back to the owner.
   const fundedOrders = await listOrdersForAgent(API_URL, agentRow.id, 'funded')
   for (const order of fundedOrders) {
     if (!order.escrowId) continue
-    const escrowId = BigInt(order.escrowId)
-    const status = await getEscrowStatus(onchain, escrowId)
-    if (status !== ON_CHAIN_DELIVERED) continue
-
-    log(`[host:${agentRow.name}] escrow #${escrowId} delivered — accepting & settling…`)
-    await acceptAndSettleOnchain(onchain, escrowId)
-    await prisma.agent.update({ where: { id: agentRow.id }, data: { taskStatus: 'completed' } })
-    log(`[host:${agentRow.name}] task completed.`)
+    const step = await reviewEscrow(API_URL, agentRow, onchain, account, BigInt(order.escrowId))
+    if (step === 'waiting') continue
+    if (step === 'final') {
+      await refundLeftover(onchain, depositorWallet, agentRow.name)
+      await prisma.agent.update({ where: { id: agentRow.id }, data: { taskStatus: 'completed' } })
+      log(`[host:${agentRow.name}] task completed.`)
+    }
     return
   }
 }

@@ -73,7 +73,8 @@ disputesRouter.put('/:escrowId', async (req, res) => {
   const saved = await prisma.dispute.upsert({
     where: { escrowId },
     create: { escrowId, buyerWallet: auth.wallet.toLowerCase(), reason: parsed.data.reason, reasonHash },
-    update: {},
+    // Fills in a placeholder the arbiter made while the text was missing (same hash, so same text).
+    update: { reason: parsed.data.reason, reasonHash },
   })
   res.json(saved)
 })
