@@ -14,6 +14,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "viem": "^2.56.8"
+    "viem": "^2.56.8",
+    "zod": "^4.6.5"
   }
 }

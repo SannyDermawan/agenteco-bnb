@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "npm install --prefix ../agent-runtime --omit=dev --no-audit --no-fund"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",
