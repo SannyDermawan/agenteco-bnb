@@ -3,6 +3,7 @@ import { OrderStatusBadge } from './OrderStatus'
 import { OnChainStatusBadge } from './OnChainStatusBadge'
 import { ArrowRightIcon } from './icons'
 import type { Order } from '@/lib/agenteco-data'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 /** Live on-chain status once there is an escrow; the registry's own status before that. */
 function StatusCell({ order }: { order: Order }) {
@@ -36,7 +37,7 @@ export function OrderTable({ orders }: { orders: Order[] }) {
               <td className="px-5 py-3.5 text-[#8B8D96]">{o.buyer}</td>
               <td className="px-5 py-3.5 text-[#8B8D96]">{o.seller}</td>
               <td className="px-5 py-3.5 text-[#8B8D96]">{o.service}</td>
-              <td className="px-5 py-3.5 text-[#F5F5F7]">{o.amount.toFixed(2)} USDT</td>
+              <td className="px-5 py-3.5 text-[#F5F5F7]">{o.amount.toFixed(2)} {TOKEN_SYMBOL}</td>
               <td className="px-5 py-3.5">
                 <StatusCell order={o} />
               </td>
@@ -67,7 +68,7 @@ export function OrderTable({ orders }: { orders: Order[] }) {
               <span>
                 {o.buyer} → {o.seller}
               </span>
-              <span className="text-[#F5F5F7]">{o.amount.toFixed(2)} USDT</span>
+              <span className="text-[#F5F5F7]">{o.amount.toFixed(2)} {TOKEN_SYMBOL}</span>
             </div>
           </Link>
         ))}

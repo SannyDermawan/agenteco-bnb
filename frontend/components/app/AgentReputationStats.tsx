@@ -1,6 +1,7 @@
 'use client'
 import { NeumorphicCard } from './NeumorphicCard'
 import { useReputation } from '@/lib/web3/hooks'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 /**
  * For an agent with an on-chain wallet, reputation is read live from
@@ -26,7 +27,7 @@ export function AgentReputationStats({
   return (
     <NeumorphicCard className="grid grid-cols-2 gap-5 p-6 sm:grid-cols-4">
       <div>
-        <div className="text-[18px] font-semibold text-[#F5F5F7]">{price.toFixed(2)} USDT</div>
+        <div className="text-[18px] font-semibold text-[#F5F5F7]">{price.toFixed(2)} {TOKEN_SYMBOL}</div>
         <div className="mt-0.5 text-[11.5px] text-[#8B8D96]">Pricing</div>
       </div>
       <div>

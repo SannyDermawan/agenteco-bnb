@@ -7,6 +7,7 @@ import { ActivateAgentCard } from '@/components/app/ActivateAgentCard'
 import { ArrowRightIcon } from '@/components/app/icons'
 import { createAgent, type ApiAgent } from '@/lib/api/agents'
 import { CAPABILITY_TEMPLATES } from '@/lib/capabilityTemplates'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 const FIELD_CLASS =
   'w-full rounded-xl border border-white/[0.08] bg-[#0B0C11] px-3.5 py-2.5 text-[13.5px] text-[#F5F5F7] shadow-[inset_2px_2px_6px_rgba(0,0,0,.4)] placeholder:text-[#54565F] focus:outline-none focus:border-[#5B5FEF]/50'
@@ -163,10 +164,10 @@ export default function CreateAgentPage() {
 
             {role === 'seller' ? (
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Pricing (USDT)">
+                <Field label={`Pricing (${TOKEN_SYMBOL})`}>
                   <input required name="price" type="number" min="0" step="0.01" placeholder="0.20" className={FIELD_CLASS} />
                 </Field>
-                <Field label="Negotiation Limit (USDT)">
+                <Field label={`Negotiation Limit (${TOKEN_SYMBOL})`}>
                   <input
                     name="negotiationLimit"
                     type="number"
@@ -179,7 +180,7 @@ export default function CreateAgentPage() {
               </div>
             ) : (
               <>
-                <Field label="Max Budget (USDT)">
+                <Field label={`Max Budget (${TOKEN_SYMBOL})`}>
                   <input
                     required
                     name="maxBudget"
@@ -239,7 +240,7 @@ export default function CreateAgentPage() {
 
             <Field label="Supported Payment Asset">
               <select className={FIELD_CLASS} defaultValue="usdt" disabled>
-                <option value="usdt">USDT</option>
+                <option value="usdt">{TOKEN_SYMBOL}</option>
               </select>
             </Field>
 

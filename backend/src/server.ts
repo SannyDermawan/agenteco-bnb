@@ -8,7 +8,7 @@ import { escrowResultsRouter } from './routes/escrowResults.ts'
 import { disputesRouter } from './routes/disputes.ts'
 import { log, logError } from './log.ts'
 import { createPublicClient, http } from 'viem'
-import { AGENT_ECO_ADDRESS, NETWORK, RPC_URL, assertRpcMatchesNetwork, botChain } from './network.ts'
+import { AGENT_ECO_ADDRESS, NETWORK, RPC_URL, assertRpcMatchesNetwork, appChain } from './network.ts'
 
 // PORT is what hosting platforms (Railway, Render, …) inject; API_PORT is the local-dev name.
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 4000)
@@ -34,14 +34,14 @@ app.use('/escrow-results', escrowResultsRouter)
 app.use('/disputes', disputesRouter)
 
 // Refuse to serve a mainnet frontend from a testnet RPC (or vice versa).
-assertRpcMatchesNetwork(() => createPublicClient({ chain: botChain, transport: http(RPC_URL) }).getChainId()).catch((error) => {
+assertRpcMatchesNetwork(() => createPublicClient({ chain: appChain, transport: http(RPC_URL) }).getChainId()).catch((error) => {
   logError('Network check failed', error, 'API')
   process.exit(1)
 })
 
 app.listen(PORT, () => {
   log(`AgentEco API listening on http://localhost:${PORT}`, 'API')
-  log(`Network: ${botChain.name} (NETWORK=${NETWORK}), contract ${AGENT_ECO_ADDRESS}`, 'API')
+  log(`Network: ${appChain.name} (NETWORK=${NETWORK}), contract ${AGENT_ECO_ADDRESS}`, 'API')
   log(`Allowed frontend origins: ${FRONTEND_ORIGINS.join(', ')}`, 'API')
 })
 

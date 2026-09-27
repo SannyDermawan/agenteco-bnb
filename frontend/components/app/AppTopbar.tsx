@@ -2,8 +2,8 @@
 import { usePathname } from 'next/navigation'
 import { formatUnits } from 'viem'
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from 'wagmi'
-import { botChain } from '@/lib/web3/chain'
-import { NETWORK_LABEL } from '@/lib/web3/network'
+import { appChain } from '@/lib/web3/chain'
+import { NETWORK_LABEL, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { useUsdtBalance, useUsdtDecimals } from '@/lib/web3/hooks'
 import { MenuIcon, WalletIcon } from './icons'
 
@@ -52,11 +52,11 @@ function WalletControl() {
     )
   }
 
-  if (chainId !== botChain.id) {
+  if (chainId !== appChain.id) {
     return (
       <button
         type="button"
-        onClick={() => switchChain({ chainId: botChain.id })}
+        onClick={() => switchChain({ chainId: appChain.id })}
         disabled={isSwitching}
         className="flex items-center gap-2 rounded-full border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-4 py-2 text-[13px] font-medium text-[#F59E0B] transition hover:bg-[#F59E0B]/15 disabled:opacity-60"
       >
@@ -72,7 +72,7 @@ function WalletControl() {
     <>
       <span className="hidden items-center gap-1.5 rounded-full border border-white/[0.06] bg-[#0D0F14] px-3 py-1.5 text-[11.5px] font-medium text-[#F5F5F7] sm:inline-flex">
         <WalletIcon className="h-3.5 w-3.5 text-[#8B8D96]" />
-        {formattedBalance} USDT
+        {formattedBalance} {TOKEN_SYMBOL}
       </span>
       <button
         type="button"

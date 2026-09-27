@@ -88,8 +88,8 @@ agentsRouter.post('/', async (req, res) => {
 })
 
 // The human confirms they've sent the deposit to the agent's wallet — a
-// buyer needs USDT = maxBudget plus a little native BOT for the host
-// runtime's own gas; a seller only needs the BOT. Verified on-chain here,
+// buyer needs the token (maxBudget) plus a little native gas for the host
+// runtime's own transactions; a seller only needs the gas. Verified on-chain here,
 // not just trusted — the same "prove it, don't claim it" pattern as
 // everything else that moves money in this app.
 agentsRouter.post('/:id/activate', async (req, res) => {

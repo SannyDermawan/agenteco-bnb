@@ -2,7 +2,7 @@ import { Router } from 'express'
 import type { Prisma } from '@prisma/client'
 import { createPublicClient, http, keccak256, toHex, type Address } from 'viem'
 import { prisma } from '../db.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, botChain } from '../network.ts'
+import { AGENT_ECO_ADDRESS, RPC_URL, appChain } from '../network.ts'
 import { createEscrowResultSchema } from '../schemas/escrowResult.ts'
 
 export const escrowResultsRouter = Router()
@@ -17,7 +17,7 @@ const RESULT_HASH_ABI = [
   },
 ] as const
 
-const publicClient = createPublicClient({ chain: botChain, transport: http(RPC_URL) })
+const publicClient = createPublicClient({ chain: appChain, transport: http(RPC_URL) })
 
 // Anyone can read a result — it's just the plaintext behind an on-chain
 // hash, not a secret. No owner-wallet auth needed for reads.

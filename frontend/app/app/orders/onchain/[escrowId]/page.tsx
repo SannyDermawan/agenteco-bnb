@@ -9,7 +9,7 @@ import { EscrowResultCard } from '@/components/app/EscrowResultCard'
 import { DisputeReasonCard } from '@/components/app/DisputeReasonCard'
 import { PageFade } from '@/components/app/PageFade'
 import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
-import { explorerAddressUrl } from '@/lib/web3/network'
+import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { useEscrowBasic, useEscrowTimestamps, useReputation, useUsdtDecimals } from '@/lib/web3/hooks'
 import { useEscrowTxHashes } from '@/lib/web3/escrowEvents'
 
@@ -90,7 +90,7 @@ export default function OnChainOrderPage({ params }: { params: Promise<{ escrowI
             <OnChainStatusBadge status={status} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[13.5px] text-[#8B8D96]">
-            <span>{amountFormatted} USDT</span>
+            <span>{amountFormatted} {TOKEN_SYMBOL}</span>
             <a
               href={explorerAddressUrl(AGENT_ECO_ADDRESS)}
               target="_blank"
@@ -164,7 +164,7 @@ export default function OnChainOrderPage({ params }: { params: Promise<{ escrowI
                 <i className="h-1.5 w-1.5 rounded-full bg-[#5B5FEF]" />
               </div>
               <div className="mt-2 text-[24px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">
-                {amountFormatted} <span className="text-[13px] font-medium text-[#8B8D96]">USDT</span>
+                {amountFormatted} <span className="text-[13px] font-medium text-[#8B8D96]">{TOKEN_SYMBOL}</span>
               </div>
             </NeumorphicCard>
 
@@ -188,7 +188,7 @@ export default function OnChainOrderPage({ params }: { params: Promise<{ escrowI
                     <div className="text-[18px] font-semibold text-[#F5F5F7]">
                       {decimals !== undefined ? formatUnits(rep.volume, decimals) : '…'}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-[#8B8D96]">Volume (USDT)</div>
+                    <div className="mt-0.5 text-[11px] text-[#8B8D96]">Volume ({TOKEN_SYMBOL})</div>
                   </div>
                 </div>
               </NeumorphicCard>

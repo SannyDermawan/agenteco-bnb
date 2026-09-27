@@ -6,6 +6,7 @@ import { BrandMarkIcon, ArrowRightIcon } from './icons'
 import type { AgentSummary } from '@/lib/agenteco-data'
 import { useReputation } from '@/lib/web3/hooks'
 import { formatReputationLine } from '@/lib/web3/reputation'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 /** For an agent with an on-chain wallet, reputation is read live from AgentEco.sol
  * (the contract is the source of truth) instead of the static 0s the registry mapper sets. */
@@ -38,7 +39,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
       </div>
 
       <div className="mt-4 text-[12.5px]">
-        <span className="font-semibold text-[#F5F5F7]">{agent.price.toFixed(2)} USDT</span>{' '}
+        <span className="font-semibold text-[#F5F5F7]">{agent.price.toFixed(2)} {TOKEN_SYMBOL}</span>{' '}
         <span className="text-[#8B8D96]">/ task</span>
       </div>
       <div className="mt-1.5 text-[11.5px] text-[#8B8D96]">{reputationLine}</div>

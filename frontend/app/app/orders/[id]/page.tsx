@@ -15,7 +15,7 @@ import { NegotiationTimeline } from '@/components/app/NegotiationTimeline'
 import { FundOrderCard } from '@/components/app/FundOrderCard'
 import { PageFade } from '@/components/app/PageFade'
 import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
-import { explorerAddressUrl } from '@/lib/web3/network'
+import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { getOrder, toNegotiationEntries, toOrderRow } from '@/lib/api/orders'
 import { useEscrowBasic, useEscrowTimestamps, useReputation, useUsdtDecimals } from '@/lib/web3/hooks'
 import { useEscrowTxHashes } from '@/lib/web3/escrowEvents'
@@ -111,7 +111,7 @@ function LiveEscrowSidebar({ escrowId }: { escrowId: bigint }) {
           <i className="h-1.5 w-1.5 rounded-full bg-[#22A06B]" />
         </div>
         <div className="mt-2 text-[24px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">
-          {amountFormatted} <span className="text-[13px] font-medium text-[#8B8D96]">USDT</span>
+          {amountFormatted} <span className="text-[13px] font-medium text-[#8B8D96]">{TOKEN_SYMBOL}</span>
         </div>
         <a
           href={explorerAddressUrl(AGENT_ECO_ADDRESS)}
@@ -143,7 +143,7 @@ function LiveEscrowSidebar({ escrowId }: { escrowId: bigint }) {
               <div className="text-[18px] font-semibold text-[#F5F5F7]">
                 {decimals !== undefined ? formatUnits(rep.volume, decimals) : '…'}
               </div>
-              <div className="mt-0.5 text-[11px] text-[#8B8D96]">Volume (USDT)</div>
+              <div className="mt-0.5 text-[11px] text-[#8B8D96]">Volume ({TOKEN_SYMBOL})</div>
             </div>
           </div>
         </NeumorphicCard>
@@ -196,7 +196,7 @@ export default function OrderDetailPage() {
             {!escrowId && <OrderStatusBadge status={row.status} />}
           </div>
           <div className="mt-1 text-[13.5px] text-[#8B8D96]">
-            {row.service} · {row.amount.toFixed(2)} USDT
+            {row.service} · {row.amount.toFixed(2)} {TOKEN_SYMBOL}
           </div>
         </div>
 

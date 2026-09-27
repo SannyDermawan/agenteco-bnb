@@ -9,6 +9,7 @@ import { BrandMarkIcon, CreateAgentIcon, ArrowRightIcon, TrashIcon } from '@/com
 import { PageFade } from '@/components/app/PageFade'
 import type { AgentStatusValue } from '@/lib/agenteco-data'
 import { deleteAgent, listAgents, updateAgent, type ApiAgent, type HostedTaskStatus } from '@/lib/api/agents'
+import { TOKEN_SYMBOL, NATIVE_SYMBOL } from '@/lib/web3/network'
 
 const TASK_STATUS_LABEL: Record<HostedTaskStatus, string> = {
   awaiting_deposit: 'Awaiting Deposit',
@@ -160,7 +161,7 @@ export default function MyAgentsPage() {
                   </div>
                   <p className="mt-2.5 text-[12.5px] leading-relaxed text-[#8B8D96]">{agent.description}</p>
                   <div className="mt-3 text-[11.5px] text-[#8B8D96]">
-                    {agent.role === 'buyer' && agent.taskStatus ? `Budget ${Number(agent.maxBudget ?? 0).toFixed(2)} USDT` : `${Number(agent.price).toFixed(2)} USDT`}
+                    {agent.role === 'buyer' && agent.taskStatus ? `Budget ${Number(agent.maxBudget ?? 0).toFixed(2)} ${TOKEN_SYMBOL}` : `${Number(agent.price).toFixed(2)} USDT`}
                   </div>
                   {agent.taskStatus === 'awaiting_deposit' && (
                     <Link
@@ -174,7 +175,7 @@ export default function MyAgentsPage() {
                     <div className="mt-3 rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/[0.06] p-3">
                       <p className="text-[12px] leading-relaxed text-[#F5F5F7]">
                         Delete {agent.name}? It disappears from My Agents and the marketplace. Past orders stay in history.
-                        {agent.taskStatus && ' Any USDT and BOT left in its agent wallet is sent back to you first.'}
+                        {agent.taskStatus && ` Any ${TOKEN_SYMBOL} and ${NATIVE_SYMBOL} left in its agent wallet is sent back to you first.`}
                       </p>
                       <div className="mt-2.5 flex gap-2">
                         <button

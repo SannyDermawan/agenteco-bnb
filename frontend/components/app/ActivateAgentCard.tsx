@@ -7,22 +7,24 @@ import { useAccount, useSendTransaction, useSignMessage, useWriteContract } from
 import { NeumorphicCard } from './NeumorphicCard'
 import { CheckIcon, WalletIcon } from './icons'
 import { wagmiConfig } from '@/lib/web3/config'
-import { botChain } from '@/lib/web3/chain'
+import { appChain } from '@/lib/web3/chain'
 import { ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
 import { useUsdtDecimals } from '@/lib/web3/hooks'
-import { assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { AGENT_GAS_TOPUP, NATIVE_SYMBOL, TOKEN_SYMBOL } from '@/lib/web3/network'
+import { InsufficientTokenError, assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { GetTestTokensCard } from './GetTestTokensCard'
 import { activateAgent, type ApiAgent } from '@/lib/api/agents'
 
-// Matches the host runtime's own reserve (see backend/src/hostedDeposit.ts) —
-// buyer: createEscrow + approve + fundEscrow + acceptAndSettle + one refund;
-// seller: several startExecution + markDelivered + payout rounds. Plus margin.
-const GAS_TOPUP_BOT = '0.08'
+// Gas for the agent's own transactions — buyer: createEscrow + approve +
+// fundEscrow + accept/dispute + rating + refund; seller: several startExecution
+// + markDelivered + dispute-response + payout rounds. Per network, see
+// AGENT_GAS_TOPUP; the host checks a matching minimum (backend/src/hostedDeposit.ts).
 
 type Step = 'idle' | 'sending-usdt' | 'sending-bot' | 'activating' | 'done'
 
 const STEP_LABEL: Record<Exclude<Step, 'idle' | 'done'>, string> = {
   'sending-usdt': 'Sending USDT…',
-  'sending-bot': 'Sending BOT for gas…',
+  'sending-bot': `Sending ${NATIVE_SYMBOL} for gas…`,
   activating: 'Activating agent…',
 }
 
@@ -40,13 +42,15 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
 
   const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState<string | null>(null)
+  // Set when the wallet lacks the settlement token — shows the test-token card.
+  const [needsTokens, setNeedsTokens] = useState(false)
   const [activated, setActivated] = useState(agent.taskStatus === 'active')
   const [copied, setCopied] = useState(false)
 
   // A hosted seller only needs gas — it earns USDT, it doesn't spend any.
   const isSeller = agent.role === 'seller'
   const wallet = agent.walletAddress as `0x${string}` | null
-  const onCorrectChain = chainId === botChain.id
+  const onCorrectChain = chainId === appChain.id
   const busy = step !== 'idle' && step !== 'done'
   const isDepositor = !!address && !!agent.depositorWallet && address.toLowerCase() === agent.depositorWallet.toLowerCase()
 
@@ -64,6 +68,7 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
   async function handleDepositAndActivate() {
     if (!wallet || !address || decimals === undefined) return
     setError(null)
+    setNeedsTokens(false)
 
     try {
       if (!isSeller) {
@@ -81,7 +86,7 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
       }
 
       setStep('sending-bot')
-      const botHash = await sendTransactionAsync({ to: wallet, value: parseEther(GAS_TOPUP_BOT) })
+      const botHash = await sendTransactionAsync({ to: wallet, value: parseEther(AGENT_GAS_TOPUP) })
       await waitForTransactionReceipt(wagmiConfig, { hash: botHash })
 
       setStep('activating')
@@ -92,6 +97,7 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
     } catch (err) {
       setStep('idle')
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setNeedsTokens(err instanceof InsufficientTokenError)
     }
   }
 
@@ -153,20 +159,20 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
         <div className="mt-5 space-y-3 text-[13px]">
           {!isSeller && (
             <div className="flex items-center justify-between">
-              <span className="text-[#8B8D96]">Required USDT (Max Budget)</span>
-              <span className="text-[#F5F5F7]">{Number(agent.maxBudget ?? 0).toFixed(2)} USDT</span>
+              <span className="text-[#8B8D96]">Required {TOKEN_SYMBOL} (Max Budget)</span>
+              <span className="text-[#F5F5F7]">{Number(agent.maxBudget ?? 0).toFixed(2)} {TOKEN_SYMBOL}</span>
             </div>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-[#8B8D96]">Required BOT (gas)</span>
-            <span className="text-[#F5F5F7]">~{GAS_TOPUP_BOT} BOT</span>
+            <span className="text-[#8B8D96]">Required {NATIVE_SYMBOL} (gas)</span>
+            <span className="text-[#F5F5F7]">~{AGENT_GAS_TOPUP} {NATIVE_SYMBOL}</span>
           </div>
         </div>
 
         <p className="mt-4 rounded-xl border border-white/[0.06] bg-[#0B0C11]/60 px-3.5 py-2.5 text-[12px] leading-relaxed text-[#8B8D96]">
           {isSeller
-            ? 'Clicking below prompts one transaction from your wallet: the BOT gas top-up. Once it confirms, the network verifies it on-chain and the agent goes live. Every settled payment is forwarded from the agent wallet to you automatically.'
-            : 'Clicking below prompts two transactions from your wallet: the USDT deposit, then the BOT gas top-up. Once both confirm, the agent is activated and the network verifies the deposit on-chain before it starts working. Any leftover USDT after negotiation is refunded back to you automatically.'}
+            ? `Clicking below prompts one transaction from your wallet: the ${NATIVE_SYMBOL} gas top-up. Once it confirms, the network verifies it on-chain and the agent goes live. Every settled payment is forwarded from the agent wallet to you automatically.`
+            : `Clicking below prompts two transactions from your wallet: the ${TOKEN_SYMBOL} deposit, then the ${NATIVE_SYMBOL} gas top-up. Once both confirm, the agent is activated and the network verifies the deposit on-chain before it starts working. Any leftover ${TOKEN_SYMBOL} after negotiation is refunded back to you automatically.`}
         </p>
 
         {!isConnected ? (
@@ -175,7 +181,7 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
           </p>
         ) : !onCorrectChain ? (
           <p className="mt-5 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2.5 text-[12.5px] text-[#F59E0B]">
-            Switch to {botChain.name} from the top bar to continue.
+            Switch to {appChain.name} from the top bar to continue.
           </p>
         ) : !isDepositor ? (
           <p className="mt-5 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2.5 text-[12.5px] text-[#F59E0B]">
@@ -200,6 +206,11 @@ export function ActivateAgentCard({ agent }: { agent: ApiAgent }) {
         )}
 
         {error && <p className="mt-3 text-[12px] leading-relaxed text-[#EF4444]">{error}</p>}
+          {needsTokens && (
+            <div className="mt-4">
+              <GetTestTokensCard reason="Your wallet does not hold enough test tokens for this. Claim some, then try again." />
+            </div>
+          )}
       </NeumorphicCard>
 
       <div className="text-center">
