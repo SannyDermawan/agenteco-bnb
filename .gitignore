@@ -24,3 +24,6 @@ broadcast/**/dry-run/
 .claude/settings.local.json
 .DS_Store
 *.log
+
+# local end-to-end scripts (may use real testnet keys via env)
+*.local.ts
