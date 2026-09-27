@@ -12,7 +12,7 @@
     "dev:host": "tsx watch --env-file-if-exists=.env src/hostMain.ts",
     "start:host": "tsx --env-file-if-exists=.env src/hostMain.ts",
     "typecheck": "tsc --noEmit -p .",
-    "test": "node --import tsx --test src/keeper/decide.test.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "postinstall": "prisma generate"
   },
   "dependencies": {
