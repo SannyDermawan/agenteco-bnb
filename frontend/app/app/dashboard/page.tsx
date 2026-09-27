@@ -4,8 +4,10 @@ import { OrderTable } from '@/components/app/OrderTable'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { ActivityTimeline } from '@/components/app/ActivityTimeline'
 import { PageFade } from '@/components/app/PageFade'
+import { GetTestTokensCard } from '@/components/app/GetTestTokensCard'
 import { useOverview } from '@/lib/useOverview'
 import { useReputation } from '@/lib/web3/hooks'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 export default function DashboardPage() {
   const { isConnected, agents, orderRows, loading, error, settledCount, activeOrders, totalVolumeSettled, activityEntries } =
@@ -24,6 +26,8 @@ export default function DashboardPage() {
           <p className="mt-1 text-[13.5px] text-[#8B8D96]">Monitor your agents, transactions, and economic activity.</p>
         </div>
 
+        <GetTestTokensCard />
+
         {!isConnected ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">
             Connect your wallet from the top bar to see your dashboard.
@@ -38,7 +42,7 @@ export default function DashboardPage() {
               <StatCard label="My Agents" value={String(agents.length)} />
               <StatCard label="Active Orders" value={String(activeOrders)} />
               <StatCard label="Completed Jobs" value={String(settledCount)} />
-              <StatCard label="Total Volume Settled" value={`${totalVolumeSettled.toFixed(2)} USDT`} accent="#5B5FEF" />
+              <StatCard label="Total Volume Settled" value={`${totalVolumeSettled.toFixed(2)} ${TOKEN_SYMBOL}`} accent="#5B5FEF" />
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

@@ -6,21 +6,23 @@ import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { useAccount, useSignMessage, useWriteContract } from 'wagmi'
 import { NeumorphicCard } from './NeumorphicCard'
 import { wagmiConfig } from '@/lib/web3/config'
-import { botChain } from '@/lib/web3/chain'
+import { appChain } from '@/lib/web3/chain'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
-import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS } from '@/lib/web3/constants'
+import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS, formatDuration } from '@/lib/web3/constants'
 import { parseCreatedEscrowId, useUsdtDecimals } from '@/lib/web3/hooks'
-import { assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { InsufficientTokenError, assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { GetTestTokensCard } from './GetTestTokensCard'
 import { taskHash } from '@shared/hashes'
 import { fundOrder, type ApiOrder } from '@/lib/api/orders'
 import { ArrowRightIcon } from './icons'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 type Step = 'idle' | 'checking-balance' | 'creating' | 'checking-allowance' | 'approving' | 'funding' | 'linking' | 'done'
 
 const STEP_LABEL: Record<Exclude<Step, 'idle' | 'done'>, string> = {
-  'checking-balance': 'Checking USDT balance…',
+  'checking-balance': `Checking ${TOKEN_SYMBOL} balance…`,
   creating: 'Creating escrow…',
-  'checking-allowance': 'Checking USDT allowance…',
+  'checking-allowance': `Checking ${TOKEN_SYMBOL} allowance…`,
   approving: 'Approving USDT…',
   funding: 'Funding escrow…',
   linking: 'Linking escrow to order…',
@@ -40,15 +42,18 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
 
   const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState<string | null>(null)
+  // Set when the wallet lacks the settlement token — shows the test-token card.
+  const [needsTokens, setNeedsTokens] = useState(false)
 
   const seller = order.sellerAgent.walletAddress as `0x${string}` | null
-  const onCorrectChain = chainId === botChain.id
+  const onCorrectChain = chainId === appChain.id
   const busy = step !== 'idle' && step !== 'done'
   const isBuyerOwner = !!address && address.toLowerCase() === order.buyerAgent.ownerWallet.toLowerCase()
 
   async function handleFund() {
     if (!seller || !address || decimals === undefined) return
     setError(null)
+    setNeedsTokens(false)
 
     try {
       const amount = parseUnits(order.price, decimals)
@@ -116,6 +121,7 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
     } catch (err) {
       setStep('idle')
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setNeedsTokens(err instanceof InsufficientTokenError)
     }
   }
 
@@ -132,7 +138,7 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
           <div className="mt-4 space-y-3 text-[13px]">
             <div className="flex items-center justify-between">
               <span className="text-[#8B8D96]">Agreed price</span>
-              <span className="text-[#F5F5F7]">{Number(order.price).toFixed(2)} USDT</span>
+              <span className="text-[#F5F5F7]">{Number(order.price).toFixed(2)} {TOKEN_SYMBOL}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="shrink-0 text-[#8B8D96]">Seller wallet</span>
@@ -142,11 +148,11 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#8B8D96]">Execution window</span>
-              <span className="text-[#F5F5F7]">24h</span>
+              <span className="text-[#F5F5F7]">{formatDuration(EXECUTION_WINDOW_SECONDS)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#8B8D96]">Review window</span>
-              <span className="text-[#F5F5F7]">48h</span>
+              <span className="text-[#F5F5F7]">{formatDuration(REVIEW_WINDOW_SECONDS)}</span>
             </div>
           </div>
 
@@ -156,7 +162,7 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
             </p>
           ) : !onCorrectChain ? (
             <p className="mt-5 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2.5 text-[12.5px] text-[#F59E0B]">
-              Switch to {botChain.name} from the top bar to continue.
+              Switch to {appChain.name} from the top bar to continue.
             </p>
           ) : !isBuyerOwner ? (
             <p className="mt-5 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2.5 text-[12.5px] text-[#F59E0B]">
@@ -184,6 +190,11 @@ export function FundOrderCard({ order }: { order: ApiOrder }) {
           )}
 
           {error && <p className="mt-3 text-[12px] leading-relaxed text-[#EF4444]">{error}</p>}
+          {needsTokens && (
+            <div className="mt-4">
+              <GetTestTokensCard reason="Your wallet does not hold enough test tokens for this. Claim some, then try again." />
+            </div>
+          )}
         </>
       )}
     </NeumorphicCard>

@@ -6,23 +6,25 @@ import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { useAccount, useWriteContract } from 'wagmi'
 import { NeumorphicCard } from './NeumorphicCard'
 import { wagmiConfig } from '@/lib/web3/config'
-import { botChain } from '@/lib/web3/chain'
+import { appChain } from '@/lib/web3/chain'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
-import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS } from '@/lib/web3/constants'
+import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS, formatDuration } from '@/lib/web3/constants'
 import { parseCreatedEscrowId, useUsdtDecimals } from '@/lib/web3/hooks'
-import { assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { InsufficientTokenError, assertUsdtBalance } from '@/lib/web3/usdtBalance'
+import { GetTestTokensCard } from './GetTestTokensCard'
 import { taskHash } from '@shared/hashes'
 import type { AgentSummary } from '@/lib/agenteco-data'
 import { getAgent } from '@/lib/api/agents'
 import { ArrowRightIcon } from './icons'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 type Step = 'idle' | 'checking-status' | 'checking-balance' | 'creating' | 'checking-allowance' | 'approving' | 'funding' | 'done'
 
 const STEP_LABEL: Record<Exclude<Step, 'idle' | 'done'>, string> = {
   'checking-status': 'Checking agent availability…',
-  'checking-balance': 'Checking USDT balance…',
+  'checking-balance': `Checking ${TOKEN_SYMBOL} balance…`,
   creating: 'Creating escrow…',
-  'checking-allowance': 'Checking USDT allowance…',
+  'checking-allowance': `Checking ${TOKEN_SYMBOL} allowance…`,
   approving: 'Approving USDT…',
   funding: 'Funding escrow…',
 }
@@ -39,18 +41,21 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
 
   const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState<string | null>(null)
+  // Set when the wallet lacks the settlement token — shows the test-token card.
+  const [needsTokens, setNeedsTokens] = useState(false)
 
   const seller = agent.walletAddress
   // The contract itself will escrow for any address — "offline" is only
   // enforced here and in the registry, so an offline seller is never hired.
   const [isOfflineNow, setIsOfflineNow] = useState(false)
   const isOffline = agent.status === 'offline' || isOfflineNow
-  const onCorrectChain = chainId === botChain.id
+  const onCorrectChain = chainId === appChain.id
   const busy = step !== 'idle' && step !== 'done'
 
   async function handleRequestService() {
     if (!seller || isOffline || !address || decimals === undefined) return
     setError(null)
+    setNeedsTokens(false)
 
     try {
       // Re-check right before any money moves — this page may have been open
@@ -125,6 +130,7 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
     } catch (err) {
       setStep('idle')
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setNeedsTokens(err instanceof InsufficientTokenError)
     }
   }
 
@@ -145,7 +151,7 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#8B8D96]">Price</span>
-              <span className="text-[#F5F5F7]">{agent.price.toFixed(2)} USDT</span>
+              <span className="text-[#F5F5F7]">{agent.price.toFixed(2)} {TOKEN_SYMBOL}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="shrink-0 text-[#8B8D96]">Seller wallet</span>
@@ -155,11 +161,11 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#8B8D96]">Execution window</span>
-              <span className="text-[#F5F5F7]">24h</span>
+              <span className="text-[#F5F5F7]">{formatDuration(EXECUTION_WINDOW_SECONDS)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#8B8D96]">Review window</span>
-              <span className="text-[#F5F5F7]">48h</span>
+              <span className="text-[#F5F5F7]">{formatDuration(REVIEW_WINDOW_SECONDS)}</span>
             </div>
           </div>
 
@@ -173,7 +179,7 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
             </p>
           ) : !onCorrectChain ? (
             <p className="mt-5 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2.5 text-[12.5px] text-[#F59E0B]">
-              Switch to {botChain.name} from the top bar to continue.
+              Switch to {appChain.name} from the top bar to continue.
             </p>
           ) : (
             <button
@@ -197,6 +203,11 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
           )}
 
           {error && <p className="mt-3 text-[12px] leading-relaxed text-[#EF4444]">{error}</p>}
+          {needsTokens && (
+            <div className="mt-4">
+              <GetTestTokensCard reason="Your wallet does not hold enough test tokens for this. Claim some, then try again." />
+            </div>
+          )}
         </>
       )}
     </NeumorphicCard>
