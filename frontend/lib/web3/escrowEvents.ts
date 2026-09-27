@@ -198,9 +198,9 @@ const STEP_EVENTS: string[][] = [
   ['EscrowFunded'],
   ['ExecutionStarted'],
   ['ResultDelivered'],
-  ['EscrowSettled', 'ReviewFinalized', 'DisputeResolved'],
+  ['EscrowSettled', 'ReviewFinalized', 'DisputeResolvedForSeller'],
 ]
-const REFUND_EVENTS = ['EscrowRefunded', 'AcceptTimedOut', 'ExecutionTimedOut', 'DisputeTimedOut']
+const REFUND_EVENTS = ['EscrowRefunded', 'AcceptTimedOut', 'ExecutionTimedOut', 'DisputeTimedOut', 'DisputeResolvedForBuyer']
 
 /**
  * The transaction behind each lifecycle step of one escrow, for explorer links.
@@ -232,7 +232,14 @@ export function useEscrowTxHashes(escrowId?: bigint) {
         })
         for (const log of logs) {
           try {
-            const { eventName } = decodeEventLog({ abi: AGENT_ECO_ABI, data: log.data, topics: log.topics as [Hex, ...Hex[]] })
+            const decoded = decodeEventLog({ abi: AGENT_ECO_ABI, data: log.data, topics: log.topics as [Hex, ...Hex[]] })
+            // A ruling settles or refunds depending on who it released to.
+            const eventName =
+              decoded.eventName === 'DisputeResolved'
+                ? (decoded.args as { releasedToSeller: boolean }).releasedToSeller
+                  ? 'DisputeResolvedForSeller'
+                  : 'DisputeResolvedForBuyer'
+                : decoded.eventName
             if (!firstHashByEvent.has(eventName) && log.transactionHash) firstHashByEvent.set(eventName, log.transactionHash)
           } catch {
             // Not an AgentEco event we know about — nothing to link.

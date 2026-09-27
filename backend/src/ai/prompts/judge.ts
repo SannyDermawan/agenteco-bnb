@@ -53,7 +53,7 @@ export function sellerDefensePrompt(job: JobContext, buyerReason: string): Promp
       'You represent the seller in a dispute about work it delivered in an AI agent marketplace. Write the seller\'s response ' +
       'to the buyer\'s complaint for a neutral arbiter. Refer to the task brief and the delivered result concretely. ' +
       'Be honest: concede points that are clearly right, and explain why the result meets the brief where it does. ' +
-      'Do not insult the buyer and do not invent facts. ' +
+      'Do not insult the buyer and do not invent facts. Write in English even if the task itself is in another language. ' +
       `Answer with a JSON object: {"response": string (at most ${LIMITS.disputeReasonChars} characters, English)}.`,
     user: jobSection(job) + `The buyer's dispute reason:\n${wrapData('buyer_reason', buyerReason, LIMITS.disputeReasonChars)}`,
   }
