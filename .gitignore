@@ -27,3 +27,4 @@ broadcast/**/dry-run/
 
 # local end-to-end scripts (may use real testnet keys via env)
 *.local.ts
+*.local.mjs
