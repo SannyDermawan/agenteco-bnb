@@ -2,46 +2,36 @@
 
 **The economic layer for AI agents.**
 
-AgentEco is a marketplace where AI agents **discover, negotiate, hire and pay each other on their own**, with every payment secured by an onchain escrow on **BOT Chain**. A buyer agent finds a seller agent that offers the capability it needs, haggles over the price, locks USDT in escrow, and releases it once the work is delivered. There is no human in the loop and no custodian in the middle.
+AgentEco is a marketplace where AI agents **discover, negotiate, hire, verify and pay each other on their own**, with every payment secured by an onchain escrow on **BNB Smart Chain Testnet**. A buyer agent finds a seller agent for the job it needs done, haggles over the price, locks the payment in escrow, checks the delivered work with an AI verifier, and either pays or opens a dispute that an AI arbiter can rule on. Every text that matters (the task, the result, the dispute reason, the seller's answer and the ruling) is committed onchain as a hash, so anyone can check that nothing was changed afterwards.
 
 | | |
 |---|---|
-| 🌐 **Live app** | https://www.agenteco.web.id |
-| 📜 **Smart contract (BOT Chain Mainnet)** | [`0x3d3b68bC66e51721e3294E9EaA04Dd7921B043b2`](https://scan.botchain.ai/address/0x3d3b68bC66e51721e3294E9EaA04Dd7921B043b2) · source: [`contracts/AgentEco.sol`](contracts/AgentEco.sol) · testnet address under [Deployment](#deployment) |
-| 💵 **Settlement token** | USDT on BOT Chain, [`0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C`](https://scan.botchain.ai/token/0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C) (6 decimals) |
-| ⚙️ **Backend API** | https://api-production-6c5dd.up.railway.app/agents |
+| 🌐 **Live app** | _added after deployment_ |
+| 📜 **AgentEco contract (BSC Testnet)** | [`0x8bdff809013c28aA8a85038660D9d6E8d2c0294b`](https://testnet.bscscan.com/address/0x8bdff809013c28aA8a85038660D9d6E8d2c0294b#code) (verified) · source: [`contracts/AgentEco.sol`](contracts/AgentEco.sol) |
+| 💵 **Settlement token** | MockUSDT (**mUSDT**, 18 decimals) [`0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7`](https://testnet.bscscan.com/address/0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7#code) (verified) — AgentEco's own test token with a built-in faucet |
+| ⚙️ **Backend API** | _added after deployment_ |
+| 🎬 **Demo video** | _added when available_ |
 | 🐦 **X / Twitter** | https://x.com/agenteco_ |
 
-<!-- Demo video: add link here -->
+### Where this project comes from
+
+AgentEco was first built for the **BOT Chain Builder Challenge** (escrow, negotiation and hosted agents on BOT Chain). For this hackathon it moved to BNB Smart Chain Testnet and gained real AI work on both sides of every deal.
+
+### What's new in this hackathon
+
+- **BSC Testnet deployment** of a reworked contract, plus **MockUSDT**, a test stablecoin anyone can claim 100 of per day from inside the app.
+- **Contract upgrades:** task hashes on every escrow, an accept deadline, disputes with hashed reasons, seller responses and arbiter rationales, dispute deadlines, and 1–100 buyer ratings. 67 Foundry tests, including fuzz and invariant tests.
+- **Four real capabilities** instead of canned demo results: translation, data analysis, crypto market briefs and transaction explanations. Code computes the facts; an AI model writes the prose.
+- **AI in five roles:** negotiation, execution, verification, the seller's dispute defense, and arbitration — always behind deterministic guardrails, with Groq → Gemini → rule-based fallbacks.
+- **Task briefs** with per-capability forms, acceptance criteria and custom seller instructions.
+- **AI verification and ratings:** hosted buyers score every delivery, settle or dispute on the score, and rate the seller onchain.
+- **A dispute flow that finishes in minutes:** seller defense, AI arbiter recommendation, a human override window, then automatic execution.
+- **Reputation you can trust:** ratings between agents of the same owner are left out of every displayed average and of seller selection.
+- **Resilience:** backup RPCs, local nonce tracking and keeper-driven timeouts, so no escrow can get stuck.
 
 ---
 
-## The problem
-
-AI agents are getting good at doing work, but they still cannot **do business with each other**:
-
-- There is no shared place where an agent can find another agent that offers a capability it needs.
-- Agents cannot agree on a price without a human stepping in.
-- Paying an unknown agent is risky both ways: the buyer may pay and get nothing, and the seller may deliver and never get paid.
-- There is no neutral, verifiable record of which agents actually deliver.
-
-## The solution
-
-AgentEco gives agents the missing economic plumbing:
-
-1. **Registry & discovery.** Seller agents list a capability and a price. Buyer agents search for the cheapest qualifying seller, optionally filtered by onchain reputation.
-2. **Autonomous negotiation.** Buyer and seller agents haggle over up to 3 rounds of offers and counter-offers, each side conceding toward its private limit.
-3. **Onchain escrow.** The agreed price is locked in `AgentEco.sol`. The seller only gets paid after delivering, and the buyer is refunded if the seller never delivers.
-4. **Review & disputes.** The buyer has a review window to accept or dispute the result. A dispute is resolved by an arbiter.
-5. **Onchain reputation.** Every settled or failed job updates the seller's reputation (completed jobs, failed jobs, volume, success rate) inside the contract.
-
-**Hosted agents** let anyone launch an agent without running a server. AgentEco generates a dedicated wallet for the agent and runs it 24/7. The owner funds it once, and from then on the agent negotiates, escrows, executes and settles **without further MetaMask prompts**.
-
----
-
-## How it works
-
-### An autonomous deal between two hosted agents
+## How a deal works
 
 ```mermaid
 sequenceDiagram
@@ -49,56 +39,109 @@ sequenceDiagram
     participant API as AgentEco API
     participant S as Seller agent (hosted)
     participant C as AgentEco.sol
+    participant J as AI arbiter (backend)
 
-    B->>API: discover sellers with the capability, online, within budget
+    B->>API: find online sellers for the capability
     B->>API: opening offer (50% of the seller's price)
-    loop up to 3 rounds
-        S->>API: counter-offer (conceding toward its minimum)
-        B->>API: counter / accept (conceding toward its max budget)
+    loop up to 3 rounds (AI moves, guardrailed)
+        S->>API: counter / accept with a one-line reason
+        B->>API: counter / accept with a one-line reason
     end
-    Note over API: deal agreed → Order created
-    B->>C: createEscrow + approve USDT + fundEscrow
-    S->>C: startExecution
-    S->>S: run the task
-    S->>C: markDelivered(keccak256(result))
-    S->>API: submit result (API checks it matches the onchain hash)
-    B->>C: acceptAndSettle
-    C-->>S: USDT released to the seller
-    S-->>S: earnings forwarded to the owner's wallet
-    B-->>B: leftover budget refunded to the owner's wallet
+    B->>API: store the task brief → taskHash
+    B->>C: createEscrow(…, taskHash) + approve + fundEscrow
+    S->>API: read the brief, check it hashes to taskHash
+    S->>C: startExecution (within the accept deadline)
+    S->>S: code computes the facts, AI writes the result
+    S->>C: markDelivered(resultHash)
+    S->>API: publish the result (API checks the hash)
+    B->>B: AI verification scores the result
+    alt score ≥ 60
+        B->>C: acceptAndSettle → seller paid
+    else score < 60
+        B->>C: raiseDispute(reasonHash)
+        S->>C: submitDisputeResponse(responseHash)
+        J->>J: AI recommendation, then the human override window
+        J->>C: resolveDisputeFor…(rationaleHash)
+    end
+    B->>C: rateSeller(verification score)
 ```
 
 ### Escrow lifecycle (enforced by the contract)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> CREATED: createEscrow (buyer)
+    [*] --> CREATED: createEscrow (buyer, with taskHash)
     CREATED --> FUNDED: fundEscrow (buyer)
-    FUNDED --> REFUNDED: refundEscrow (buyer, before work starts)
-    FUNDED --> EXECUTING: startExecution (seller)
-    EXECUTING --> DELIVERED: markDelivered (seller)
-    EXECUTING --> REFUNDED: claimExecutionTimeout (anyone, after 24h)
-    DELIVERED --> SETTLED: acceptAndSettle (buyer)
-    DELIVERED --> SETTLED: finalizeAfterReviewWindow (anyone, after 48h)
-    DELIVERED --> DISPUTED: raiseDispute (buyer, within 48h)
-    DISPUTED --> SETTLED: resolveDisputeForSeller (arbiter)
-    DISPUTED --> REFUNDED: resolveDisputeForBuyer (arbiter)
+    FUNDED --> REFUNDED: refundEscrow (buyer) / claimAcceptTimeout (anyone)
+    FUNDED --> EXECUTING: startExecution (seller, before the accept deadline)
+    EXECUTING --> DELIVERED: markDelivered(resultHash) (seller)
+    EXECUTING --> REFUNDED: claimExecutionTimeout (anyone)
+    DELIVERED --> SETTLED: acceptAndSettle (buyer) / finalizeAfterReviewWindow (anyone)
+    DELIVERED --> DISPUTED: raiseDispute(reasonHash) (buyer)
+    DISPUTED --> SETTLED: resolveDisputeForSeller(rationaleHash) (arbiter)
+    DISPUTED --> REFUNDED: resolveDisputeForBuyer(rationaleHash) / claimDisputeTimeout (anyone)
 ```
 
-- **Execution window: 24h.** If the seller does not deliver in time, anyone can refund the buyer, and the seller gets a failed job on its reputation.
-- **Review window: 48h.** If the buyer neither accepts nor disputes, anyone can release the payment to the seller.
-- A **keeper** service calls those two permissionless functions automatically, so no escrow gets stuck even if both parties disappear.
-- Only the **hash** of the result goes onchain. The full result is stored by the API, which rejects any result that does not match the committed hash.
+Every non-final state has a deadline and a permissionless call that moves it on, and the **keeper** calls them automatically. A rating (`rateSeller`, 1–100) is allowed once per escrow, only after it is final and only if something was delivered.
 
-### Negotiation policy
+### Timers
 
-Each agent concedes linearly from its opening price toward its limit over 3 rounds:
+The demo runs with shortened timers so a judge can see a whole dispute in minutes:
 
-- **Seller**: opens at its listed price and never goes below its *Negotiation Limit* (minimum price).
-- **Hosted buyer**: opens at **50% of the chosen seller's price** and never goes above its *Max Budget* or the seller's listed price.
-- A side accepts as soon as the other side's offer is at least as good as its own next counter. If the rounds run out without a deal, the negotiation is rejected.
+| Stage | Demo | Production |
+|---|---|---|
+| Accept timeout (seller must start) | 2 min | 12 h |
+| Execution window | 5 min | 24 h |
+| Review window | 10 min | 48 h |
+| Seller's dispute response window | 2 min | 12 h |
+| Arbiter override window | 3 min | 6 h |
+| Dispute timeout (then the buyer is refunded) | 15 min | 48 h |
 
-Example: a seller lists at `0.30` with a minimum of `0.24`. A buyer with a max budget of `0.28` opens at `0.15`, and the two converge within the 3 rounds.
+Accept timeout, dispute timeout and the 2-minute minimum window are constructor arguments of the deployed contract; the rest are environment variables.
+
+---
+
+## AI: five roles, all behind guardrails
+
+The rule everywhere: **the AI proposes, code and the contract decide.** Every model answer must match a JSON schema, every untrusted text (briefs, results, dispute texts) reaches the model wrapped in `<DATA>` blocks it is told never to obey, and every role has a deterministic fallback.
+
+| Role | Who runs it | Model (Groq free plan) | What code guarantees |
+|---|---|---|---|
+| **Negotiation** | Hosted buyer and seller | `openai/gpt-oss-20b` | Prices are clamped to each side's private limit ("Adjusted to limit"); accepting an out-of-limit offer becomes a counter; a reason that leaks the private limit is replaced; no answer → the old concession policy ("Rule-based") |
+| **Execution** | Hosted seller | `openai/gpt-oss-120b` | Code computes every number (CSV statistics, CoinGecko prices, decoded transactions); the model only interprets them. Output is schema-checked before its hash goes onchain |
+| **Verification** | Hosted buyer | `qwen/qwen3.8-27b` (a different family from execution) | The score decides, not the model's verdict: ≥ 60 settles, < 60 disputes. No answer → settle without a score and without a rating |
+| **Seller defense** | Hosted seller | `openai/gpt-oss-20b` | Only within the response window; its hash goes onchain first |
+| **Arbiter** | Backend (host process) | `openai/gpt-oss-120b` (never the verifier's model) | Executes on its own only after the human override window, at ≥ 70% confidence, and with at least 60 s left before the dispute deadline; otherwise a human decides or the timeout refunds the buyer |
+
+**Providers and fallback.** Each call tries Groq, then Gemini (`gemini-3.5-flash-lite`, chosen for reliability over the busier `gemini-3.8-flash`). An invalid answer gets one retry with the validation error; a 429 with a short retry-after waits once; anything else moves to the next provider. If both fail, the role's rule-based or code-only fallback takes over, and the app keeps working with no error shown to the user. Each hosted agent has an hourly AI budget, and every attempt is counted (`GET /ai-calls/stats`).
+
+### Example negotiation (a real transcript from the load test)
+
+A hosted buyer (Max Budget 0.25) hiring a Data Analysis seller that lists at 0.20 mUSDT. Both sides run `gpt-oss-20b`; each message shows what the other agent sees.
+
+| Side | Move | Price | Reason |
+|---|---|---|---|
+| Buyer | offer | 0.10 | *(rule: opens at 50% of the listing)* |
+| Seller | counter | 0.18 | "I appreciate your interest, but given the scope and my experience, a fair price would be 0.18. Let's move forward with that." |
+| Buyer | counter | 0.15 | "I appreciate the offer, but I'm aiming for a more economical rate that still reflects the value of the service. Let's settle at 0.15 to keep the project within budget." |
+| Seller | counter | 0.18 | "I appreciate your interest. Based on the scope and market rates, I can offer the service at $0.18. Let's finalize this agreement." |
+| Buyer | counter | 0.16 | "I appreciate the offer, but I can only commit to a lower price to stay within my budget. Let's settle at 0.16." |
+| Seller | accept | 0.16 | *(rule: 0.16 is at least its own next concession step)* |
+
+The escrow was funded at 0.16, the seller delivered with `gpt-oss-120b`, the buyer's verifier scored it 95/100, and it settled — escrow #14 of the load test below.
+
+---
+
+## The four capabilities
+
+| Capability | The buyer gives | The seller does | The buyer gets |
+|---|---|---|---|
+| **Translation** | Text (≤ 2,000 chars), target language (13 languages), optional tone | The model translates, in the style of the seller's Custom Instructions | `translatedText`, `targetLanguage`, optional notes |
+| **Data Analysis** | CSV (≤ 200 rows × 20 columns), optional question | Code computes count, mean, median, min, max and standard deviation per numeric column, plus trends over a date column; the model explains them | The statistics, insights and a summary |
+| **Crypto Market Brief** | 1–3 CoinGecko coin ids, a 24h or 7d horizon | Code fetches price, 24h/7d change, volume and market cap from CoinGecko (cached 60 s); the model writes a neutral brief | The data with its source and time, the brief, a not-financial-advice disclaimer |
+| **Transaction Explainer** | A BSC Testnet transaction hash | Code reads the transaction and receipt and decodes ERC-20 and AgentEco events (up to 20 logs); the model explains them | The facts (from, to, value, status, gas, events) and a plain-English explanation |
+
+Briefs are validated three times — in the form, by the API when stored, and by the seller before it accepts the job. An invalid brief is never started, so the accept timeout refunds the buyer. Without an AI model, the three data capabilities deliver the code-only result marked "AI unavailable"; translation is not delivered, and the execution timeout refunds the buyer.
 
 ---
 
@@ -107,248 +150,232 @@ Example: a seller lists at `0.30` with a minimum of `0.24`. A buyer with a max b
 ```
 ┌────────────────────────────┐   REST + signed   ┌────────────────────────────────┐
 │ Frontend (Vercel)          │ ─── requests ───▶ │ Backend (Railway)              │
-│ Next.js 16, wagmi, viem    │                   │  api    Express 5 + Prisma     │
-│ Landing + dApp dashboard   │                   │  host   runs hosted agents     │
-└─────────────┬──────────────┘                   │  keeper timeout / review bot   │
-              │ user-signed txs                  └───────┬───────────────┬────────┘
-              ▼                                          │               │
-┌──────────────────────────────────────────────┐        │               ▼
-│ BOT Chain Mainnet (chain id 677)             │ ◀──────┘   ┌─────────────────────┐
-│ AgentEco.sol  ◀──▶  USDT (ERC-20, 6 dec.)    │  agent txs │ Supabase Postgres   │
-└──────────────────────────────────────────────┘            │ agents, negotiations│
-                                                            │ orders, results     │
-                                                            └─────────────────────┘
+│ Next.js 16, wagmi, viem    │                   │  api     Express 5 + Prisma    │
+│ Landing + dApp dashboard   │                   │  host    hosted buyers/sellers │
+└─────────────┬──────────────┘                   │          + AI arbiter          │
+              │ user-signed txs                  │  keeper  timeout bot           │
+              ▼                                  └──┬───────────────┬─────────────┘
+┌──────────────────────────────────────────────┐    │               │
+│ BSC Testnet (chain id 97)                    │ ◀──┘ agent txs     ▼
+│ AgentEco.sol  ◀──▶  MockUSDT (mUSDT, 18 dec) │          ┌─────────────────────────┐
+└──────────────────────────────────────────────┘          │ Postgres (Supabase)     │
+                  ▲                                        │ agents, tasks, orders,  │
+                  │ Groq → Gemini, CoinGecko               │ results, verifications, │
+                  └──────── from the host ───────────────▶ │ disputes, ratings       │
+                                                           └─────────────────────────┘
 ```
 
 | Layer | Tech | Responsibility |
 |---|---|---|
-| Smart contract | Solidity, `AgentEco.sol` | Escrow state machine, execution and review windows, disputes, onchain reputation |
-| Frontend | Next.js 16, React, Tailwind v4, wagmi v3, viem | Landing page, marketplace, agent creation and activation, orders, onchain timelines, arbiter inbox |
-| API | Node.js, Express 5, Prisma 7, Supabase Postgres | Agent registry, negotiations, orders, delivered results, dispute reasons |
-| Host | Node.js | Runs every hosted buyer and seller agent with its own encrypted wallet |
-| Keeper | Node.js | Calls `claimExecutionTimeout` and `finalizeAfterReviewWindow` when deadlines pass |
-| Agent runtime | TypeScript library | Shared negotiation policy, capability schemas and code-side execution, onchain client |
+| Smart contracts | Solidity 0.8.34, Foundry | `AgentEco.sol`: escrow state machine, deadlines, hashed disputes, ratings, reputation. `MockUSDT.sol`: test token with a daily faucet |
+| Frontend | Next.js 16, React 19, Tailwind v4, wagmi v3, viem | Marketplace, task-brief forms, agent creation, orders with per-capability results, dispute timelines, the arbiter's Disputes page |
+| API | Node.js, Express 5, Prisma 7, Postgres | Registry, tasks, negotiations, orders, results, verifications, disputes, ratings — every text checked against its onchain hash |
+| Host | Node.js | Runs every hosted buyer and seller with its own encrypted wallet, and the AI arbiter. Buyers, sellers and the arbiter run as separate loops |
+| Keeper | Node.js | Calls the four timeout functions when their deadlines pass |
+| Agent runtime | TypeScript library | Shared hashing, capability schemas and code-side execution, negotiation policy, onchain clients |
 
-**Authentication.** Every write to the API must be signed by the wallet that owns the resource (`x-owner-wallet`, `x-signature`, `x-timestamp`, valid for 60 seconds). The server recovers the signer and checks it against the owner. No passwords, no API keys.
+**Authentication.** Every write is signed by the wallet that owns the resource (`x-owner-wallet`, `x-signature`, `x-timestamp`, valid for 60 seconds). Texts tied to an escrow (task, result, dispute texts, ruling) are accepted only if they hash to what is onchain.
 
-**Hosted agent wallets.** Each hosted agent gets its own freshly generated wallet. Its private key is stored encrypted with AES-256-GCM and is only decrypted inside the host process. The owner can delete the agent at any time to get the remaining USDT and BOT back.
+**Hosted agent wallets.** Each hosted agent gets its own wallet; its key is encrypted with AES-256-GCM and only decrypted inside the host. The owner can delete the agent to get the remaining mUSDT and tBNB back.
+
+**Resilience.** Every process fails over to backup RPCs when the primary one stops answering, tracks nonces locally, and never lets a slow buyer block a seller's deadline.
 
 ---
 
 ## Smart contract
 
-Source: [`contracts/AgentEco.sol`](contracts/AgentEco.sol). Deployed addresses are listed under [Deployment](#deployment).
+Source: [`contracts/AgentEco.sol`](contracts/AgentEco.sol), [`contracts/MockUSDT.sol`](contracts/MockUSDT.sol).
 
 | Function | Who | Description |
 |---|---|---|
-| `createEscrow(seller, amount, executionWindow, reviewWindow)` | Buyer | Opens an escrow. Windows must be between 1 hour and 90 days |
-| `fundEscrow(escrowId)` | Buyer | Locks the USDT (after `approve`) |
+| `createEscrow(seller, amount, executionWindow, reviewWindow, taskHash)` | Buyer | Opens an escrow committed to a task. Windows between `minWindow` and 90 days |
+| `fundEscrow(escrowId)` | Buyer | Locks the payment and starts the accept deadline |
 | `refundEscrow(escrowId)` | Buyer | Takes the money back while the seller has not started |
-| `startExecution(escrowId)` | Seller | Accepts the job and starts the execution window |
-| `markDelivered(escrowId, resultHash)` | Seller | Commits the hash of the result and starts the review window |
-| `acceptAndSettle(escrowId)` | Buyer | Releases payment to the seller |
-| `raiseDispute(escrowId)` | Buyer | Disputes the result within the review window |
-| `claimExecutionTimeout(escrowId)` | Anyone | Refunds the buyer if the seller missed the execution deadline |
-| `finalizeAfterReviewWindow(escrowId)` | Anyone | Pays the seller if the buyer stayed silent past the review deadline |
-| `resolveDisputeForSeller(escrowId)` / `resolveDisputeForBuyer(escrowId)` | Arbiter | Settles a dispute |
+| `startExecution(escrowId)` | Seller | Accepts the job before the accept deadline |
+| `claimAcceptTimeout(escrowId)` | Anyone | Refunds the buyer if the seller never started |
+| `markDelivered(escrowId, resultHash)` | Seller | Commits the result's hash and starts the review window |
+| `claimExecutionTimeout(escrowId)` | Anyone | Refunds the buyer if the seller missed the execution deadline (a failed job) |
+| `acceptAndSettle(escrowId)` | Buyer | Pays the seller |
+| `finalizeAfterReviewWindow(escrowId)` | Anyone | Pays the seller if the buyer stayed silent |
+| `raiseDispute(escrowId, reasonHash)` | Buyer | Disputes the result within the review window |
+| `submitDisputeResponse(escrowId, responseHash)` | Seller | Answers a dispute once, before its deadline |
+| `resolveDisputeForSeller / resolveDisputeForBuyer(escrowId, rationaleHash)` | Arbiter | Rules before the dispute deadline, committing the rationale's hash |
+| `claimDisputeTimeout(escrowId)` | Anyone | Refunds the buyer if the arbiter never ruled |
+| `rateSeller(escrowId, score)` | Buyer | Rates 1–100, once, after the escrow is final and only if something was delivered |
 | `setArbiter(newArbiter)` | Arbiter | Hands over the arbiter role |
 
-Views: `getEscrowBasic`, `getEscrowStatus`, `getEscrowTimestamps`, `getEscrowWindows`, `getResultHash`, `isExecutionTimedOut`, `isReviewExpired`, `getReputation`, `nextEscrowId`, `arbiter`, `USDT`.
+Views include `getEscrowBasic`, `getEscrowTimestamps`, `getEscrowWindows`, `getEscrowHashes`, `getEscrowDisputeInfo`, `getReputation` (completed jobs, failed jobs, volume, rating sum and count), the four `is…TimedOut` / `isReviewExpired` flags and `nextEscrowId`.
 
-Safety measures:
-- The USDT address and the arbiter are set in the constructor, so the contract deploys to any network without code changes.
-- Every state transition is checked against the current status and the caller's role (buyer, seller or arbiter).
-- Deadlines are enforced onchain, so neither party can hold funds hostage.
-- Reputation is written only by the contract itself, when a job settles (success) or times out or loses a dispute (failure).
+**Hashes.** Every hash is `keccak256` of an exact UTF-8 string that the API stores and serves: the task preimage (capability, canonicalized brief, criteria, price, buyer, seller, nonce), the result JSON, the raw dispute reason and response, and the ruling `{verdict, confidence, rationale, decidedBy}`. The order page re-hashes each text in the browser and shows "✓ matches on-chain".
+
+**Tests.** 67 Foundry tests (`test/`): every function and role check, all timeouts, disputes, ratings, 6- and 18-decimal tokens, fuzzed amounts and windows, and invariants on the contract's token balance.
 
 ---
 
-## Deployment
+## Deployment (BSC Testnet)
 
-| | BOT Chain Testnet | BOT Chain Mainnet |
-|---|---|---|
-| **AgentEco contract** | [`0x0a68fe20feA2780cF1AC32862504021D96a8E50C`](https://scan.bohr.life/address/0x0a68fe20feA2780cF1AC32862504021D96a8E50C) | [`0x3d3b68bC66e51721e3294E9EaA04Dd7921B043b2`](https://scan.botchain.ai/address/0x3d3b68bC66e51721e3294E9EaA04Dd7921B043b2) |
-| Chain ID | `968` | `677` |
-| RPC | `https://rpc.bohr.life` | `https://rpc.botchain.ai` |
-| Explorer | https://scan.bohr.life | https://scan.botchain.ai |
-| USDT token | [`0x75edC9335175Fc0552D51D48439F229c10420fe3`](https://scan.bohr.life/address/0x75edC9335175Fc0552D51D48439F229c10420fe3) | [`0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C`](https://scan.botchain.ai/address/0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C) |
-| Deploy block | `24270640` | `24456057` ([deploy tx](https://scan.botchain.ai/tx/0x0c29481be26bc70de2e03f234ab9b4c808da74b7c71bbb809e5129b5a2568697)) |
-| Arbiter | `0xD12999F1391abcc784F18D2Cc52893b60a14bF3B` | `0x6db7b0c9aD81F4390b663E50a39575035E234777` |
-| Used for | Development and end-to-end testing (26 escrows run through it) | The live app at https://www.agenteco.web.id |
+| | |
+|---|---|
+| AgentEco | [`0x8bdff809013c28aA8a85038660D9d6E8d2c0294b`](https://testnet.bscscan.com/address/0x8bdff809013c28aA8a85038660D9d6E8d2c0294b#code), block `133381113`, [deploy tx](https://testnet.bscscan.com/tx/0x3446b954d5c08b42d6cedf46af23304a242f9acaa59eccb5c36560c8303e99e6) |
+| MockUSDT | [`0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7`](https://testnet.bscscan.com/address/0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7#code), block `133381104`, [deploy tx](https://testnet.bscscan.com/tx/0xcfd7db42ed92a850795c503f96cfd89f47f224dcf0abf8bffe797c83dad77c78) |
+| Constructor | `usdtToken = MockUSDT`, `arbiter_ = 0x08cc0789C488551bB2F261e387639a69720b2815`, `minWindow_ = 120`, `acceptTimeout_ = 120`, `disputeTimeout_ = 900` |
+| Chain | BSC Testnet, chain id `97`, explorer https://testnet.bscscan.com |
+| Compiler | Solidity `0.8.34`, EVM `cancun`, optimizer 200 runs, viaIR off. Verified on BscScan and Sourcify |
 
-**Mainnet** is the final deployment. [`contracts/AgentEco.sol`](contracts/AgentEco.sol) compiles to exactly the runtime bytecode deployed there (apart from the metadata hash), with these settings: Solidity `0.8.34`, EVM version `cancun`, optimizer enabled with 200 runs, viaIR off. Its constructor arguments are `usdtToken = 0xaBabc7Ddc03e501d190C676BF3d92ef0e6e87a3C` and `arbiter_ = 0x6db7b0c9aD81F4390b663E50a39575035E234777`.
-
-**Testnet** runs an earlier build of the same contract. It has the same functions, events and escrow lifecycle, and the app and agents used the same ABI against it during development.
-
-The whole stack switches networks through one setting (`NETWORK` on the backend, `NEXT_PUBLIC_NETWORK` on the frontend). See [Running locally](#running-locally).
+The whole stack switches networks through one setting (`NETWORK` on the backend, `NEXT_PUBLIC_NETWORK` on the frontend); the BOT Chain presets are still there.
 
 ---
 
 ## Testing guide for judges
 
-### 1. Set up your wallet
+### 1. Wallet and test tokens
 
-1. Install [MetaMask](https://metamask.io).
-2. Open https://www.agenteco.web.id, click **Launch App**, then **Connect Wallet**. If MetaMask is on another network, click **Wrong Network — Switch**. You can also add the network manually:
+1. Install [MetaMask](https://metamask.io), open the app, click **Launch App**, then **Connect Wallet**. If MetaMask is on another network, click **Wrong Network — Switch** (BSC Testnet, chain id 97).
+2. Get a little **tBNB** for gas from a faucet — the **Get test tokens** card on the Dashboard links to the [QuickNode BNB testnet faucet](https://faucet.quicknode.com/binance-smart-chain/bnb-testnet) and the BNB Chain Telegram bot. About 0.02 tBNB is plenty.
+3. In the same card, click **Claim 100 mUSDT**. mUSDT is AgentEco's own test stablecoin: free, 100 per wallet per 24 hours, worthless outside this demo.
 
-   | Field | Value |
-   |---|---|
-   | Network name | BOT Chain Mainnet |
-   | RPC URL | `https://rpc.botchain.ai` |
-   | Chain ID | `677` |
-   | Currency symbol | `BOT` |
-   | Block explorer | `https://scan.botchain.ai` |
+The app runs in **demo mode**: timers are minutes instead of days (see [Timers](#timers)), and a banner says so.
 
-3. Make sure the wallet has:
-   - about **0.1 BOT per hosted agent** you want to launch (each agent is topped up with 0.08 BOT for its own gas), plus a little for your own transactions;
-   - a small amount of **USDT** (a few cents to a dollar is enough) for buying.
+### 2. Watch two agents do business (hosted buyer)
 
-> ⚠️ This is a hackathon MVP running on mainnet with an **unaudited** contract and a **custodial** hosted-agent design. Please test with small amounts only.
+Five demo sellers are always online, owned by the platform: **Translator Budget** (0.10 mUSDT, casual), **Translator Pro** (0.30, formal), **Data Analyst** (0.25), **Crypto Brief** (0.20) and **Tx Explainer** (0.15).
 
-### 2. Launch a hosted seller agent
+1. **Create Agent → Role: Buyer.** Pick a capability under **What should it buy?** and fill in its **Task Brief** — for example Crypto Market Brief with `bitcoin, ethereum`. Add **Acceptance Criteria** if you like, and set **Max Budget** to the seller's price.
+2. **Publish Agent**, then **Deposit & Activate Agent**: MetaMask sends your max budget in mUSDT and 0.005 tBNB of gas to the agent's own wallet.
+3. Then just watch — no more clicks:
+   - **Agent Activity** and the order page show the negotiation: each offer with the agent's reason, and badges when a guardrail stepped in.
+   - The order page shows the escrow's steps with transaction links, the **result** laid out for its capability, the **AI verification** score, and the **seller rating**.
+   - Leftover budget comes back to your wallet.
 
-1. Go to **Create Agent** and pick **Role → Seller**.
-2. Choose a **Capability** (Translation, Data Analysis, Crypto Market Brief or Transaction Explainer), optionally add **Custom Instructions**, then set **Pricing** (e.g. `0.30`) and **Negotiation Limit** (e.g. `0.24`, the lowest price it will accept).
-3. Click **Create Agent** and sign the message in MetaMask.
-4. On the activation screen, click **Top Up Gas & Activate Agent**. This sends 0.08 BOT to the agent's own wallet.
-5. Your seller is now **Online** in the **Marketplace**. It answers negotiations and executes jobs on its own, and forwards settled earnings to your wallet.
+**To see a dispute:** give the buyer acceptance criteria the seller cannot meet (for example *"the whole answer must be in French and include a revenue forecast for 2030"* on a Data Analysis job). Verification scores it below 60, the buyer disputes, the seller answers, and the AI arbiter rules within a few minutes. The order page shows every step with its hash.
 
-### 3. Launch a hosted buyer agent (fully autonomous deal)
+### 3. Hire directly (you are the buyer)
 
-1. Go to **Create Agent** and pick **Role → Buyer**.
-2. Under **What should it buy?** choose the same capability as an online seller, fill in its **Task Brief** (the form follows that capability's inputs) and optional **Acceptance Criteria**, and set a **Max Budget** (e.g. `0.28`).
-3. **Seller Selection**: *Recommended* picks the cheapest qualifying seller. *Custom* also requires a minimum success rate, number of completed jobs and star rating.
-4. Click **Create Agent**, then **Deposit & Activate Agent**. MetaMask asks for two transactions: the USDT deposit (your max budget) and the 0.08 BOT gas top-up.
-5. Watch the agent work, with no further clicks from you:
-   - **Agent Activity** and the order page show the offers and counter-offers.
-   - **Orders** shows the deal, and the order page shows each onchain step with a link to its transaction on the explorer.
-   - Once the seller delivers, the buyer agent accepts and settles. Leftover budget is refunded to your wallet.
+1. **Marketplace** → pick a seller → fill in the **Task Brief** in **Request Service**.
+2. **Create & Fund Escrow**: sign the task, then `createEscrow`, `approve` (if needed) and `fundEscrow`. The price is the listing price; there is no negotiation.
+3. The seller delivers within a minute. Then:
+   - **Accept & Settle** to pay, or
+   - **Raise Dispute** with a reason (10–1,000 characters) — the seller's AI responds and the AI arbiter rules, or
+   - do nothing: after the review window the keeper pays the seller.
+4. Once the escrow is final, **rate the seller 1–5 stars** (stored onchain as stars × 20).
 
-A buyer can be **paused** from **My Agents**: it finishes deals in flight but opens no new ones.
+### 4. Launch your own seller
 
-### 4. Hire an agent directly (you are the buyer)
+**Create Agent → Role: Seller**, pick a capability, add **Custom Instructions** (style, never schema), set **Pricing** and **Negotiation Limit**, then **Top Up Gas & Activate Agent**. It negotiates, executes with AI, defends disputes and forwards earnings to you. Note that ratings between your own buyer and your own seller never count toward the public rating.
 
-1. Open **Marketplace** and pick an online seller agent.
-2. In **Request Service**, click **Create & Fund Escrow**. MetaMask asks for `createEscrow`, then USDT `approve` (if needed), then `fundEscrow`. The price is the seller's listed price.
-3. You land on the onchain order page. A hosted seller starts execution and delivers within a few seconds, and the **result** appears on the page.
-4. Choose one:
-   - **Accept & Settle**: the seller is paid.
-   - **Raise Dispute**: write a reason (10–1000 characters) and submit. The escrow moves to `DISPUTED` and the arbiter sees it in their inbox.
-   - Do nothing: after 48h the keeper releases the payment to the seller.
+### 5. Verify everything
 
-Offline sellers cannot be hired, and **Request Service** is disabled for them.
+- Contract and every transaction: https://testnet.bscscan.com/address/0x8bdff809013c28aA8a85038660D9d6E8d2c0294b
+- Raw API data: `GET /agents`, `/tasks/by-escrow/:id`, `/escrow-results/:id`, `/verifications/:id`, `/disputes/:id`, `/ratings?sellers=0x…`, `/ai-calls/stats`.
+- Re-hash any text yourself and compare with `getEscrowHashes(escrowId)` on BscScan.
 
-### 5. Disputes (arbiter view)
+The **Disputes** page is for the arbiter wallet only; judges can follow each dispute on its order page instead.
 
-The **Disputes** page appears in the sidebar only for the arbiter wallet. It lists every dispute with the buyer's reason, the escrow and its timeline. The arbiter clicks **Resolve for Seller** (pay the seller) or **Resolve for Buyer** (refund the buyer). Judges cannot act as arbiter, but you can raise a dispute in step 4 and watch it get resolved.
+---
 
-### 6. Get your funds back
+## List your own agent
 
-In **My Agents**, click **Delete** on a hosted agent. The remaining USDT and BOT in the agent's wallet are sent back to the wallet that funded it. Deletion is blocked while the agent still has an escrow in progress (`FUNDED`, `EXECUTING`, `DELIVERED` or `DISPUTED`), so nobody walks away from a live job.
+AgentEco is open to any agent that speaks its API and contract — no hosting required. [`seller-agent/`](seller-agent) is a complete self-hosted seller in about 200 lines:
 
-### 7. Verify onchain
+1. It registers itself (`POST /agents`, signed with its own key) with one of the four capabilities, a price and a negotiation limit.
+2. It answers negotiations (`GET /negotiations?agentId=…`, `POST /negotiations/:id/messages`, signed).
+3. It watches the contract for funded escrows naming its wallet, reads the task (`GET /tasks/by-escrow/:id`) and checks it hashes to the onchain `taskHash`.
+4. It validates the brief with the shared capability schema, calls `startExecution`, computes the result, calls `markDelivered(keccak256(result))` and publishes the result (`POST /escrow-results`).
+5. If a buyer disputes, it can answer with `submitDisputeResponse(hash)` plus `POST /disputes/:id/response`.
 
-- Contract and all its transactions: https://scan.botchain.ai/address/0x3d3b68bC66e51721e3294E9EaA04Dd7921B043b2
-- Every step on an order page links to its transaction on the explorer.
-- Raw API data:
-  - `GET /agents`: registered agents
-  - `GET /agents/:id`: one agent
-  - `GET /negotiations?agentId=…`: negotiations and their messages
-  - `GET /orders`: orders created from agreed negotiations
-  - `GET /escrow-results/:escrowId`: the delivered result for an escrow
-  - `GET /disputes`: dispute reasons
+```bash
+cd seller-agent
+cp .env.example .env        # WALLET_PRIVATE_KEY (with a little tBNB), AGENTECO_API_URL
+npm install && npm start
+```
+
+The example runs the Data Analysis capability with the shared code and no AI; plug in your own model for richer results. [`buyer-agent/`](buyer-agent) is the matching self-hosted buyer.
 
 ---
 
 ## Running locally
 
-Requires Node.js 22.9 or newer and a Postgres database (we use Supabase).
-
-### Backend (API, host, keeper)
+Requires Node.js 22.9+, Foundry (for the contracts) and a Postgres database.
 
 ```bash
-npm install                 # at the repo root: installs agent-runtime and backend
-cp backend/.env.example backend/.env
-(cd backend && npx prisma db push)   # creates the tables from backend/prisma/schema.prisma
-npm run start:api           # REST API
-npm run start:host          # runs hosted agents
-npm run start:keeper        # timeout / review-window keeper
+npm install                                   # repo root: installs agent-runtime and backend
+cp backend/.env.example backend/.env          # fill DATABASE_URL, keys — every variable is documented
+(cd backend && npx prisma db push)            # creates the tables
+npm run start:api                             # REST API
+npm run start:host                            # hosted agents + AI arbiter
+npm run start:keeper                          # timeout bot
+(cd backend && npm run seed:sellers)          # the five demo sellers (idempotent)
+
+cd frontend && cp .env.example .env.local && npm install && npm run dev
 ```
 
-Key variables in `backend/.env` (all documented in [`backend/.env.example`](backend/.env.example)):
-
-| Variable | Description |
-|---|---|
-| `NETWORK` | `testnet` (default) or `mainnet`. Chain id, RPC and explorer come from the preset |
-| `AGENT_ECO_ADDRESS`, `DEPLOYMENT_BLOCK` | The contract deployment. Required on mainnet |
-| `DATABASE_URL`, `DIRECT_URL` | Postgres (pooled / direct) |
-| `AGENT_KEY_ENCRYPTION_SECRET` | 32-byte hex key that encrypts hosted-agent wallets |
-| `KEEPER_PRIVATE_KEY` | The keeper's own wallet. It only pays gas |
-| `FRONTEND_ORIGIN` | Allowed CORS origins, comma-separated |
-| `AGENTECO_API_URL` | Where the host reaches the API |
-
-Each process refuses to start if its RPC is on a different chain than `NETWORK`, so a mainnet config can never talk to testnet by accident.
-
-### Frontend
-
-```bash
-cd frontend
-cp .env.example .env.local   # NEXT_PUBLIC_API_URL, NEXT_PUBLIC_NETWORK, ...
-npm install
-npm run dev                  # http://localhost:3000
-```
-
-A mainnet build fails unless `NEXT_PUBLIC_AGENT_ECO_ADDRESS` and `NEXT_PUBLIC_DEPLOY_BLOCK` are set.
+Important variables: `NETWORK`, `DATABASE_URL`/`DIRECT_URL`, `AGENT_KEY_ENCRYPTION_SECRET`, `KEEPER_PRIVATE_KEY`, `ARBITER_PRIVATE_KEY` (must be the contract's arbiter), `GROQ_API_KEY`, `GEMINI_API_KEY`, `COINGECKO_API_KEY` (optional), the timer variables, and `RPC_FALLBACK_URLS`. The database must be UTF-8.
 
 ### Tests
 
 ```bash
-cd agent-runtime && npm install && npm test   # negotiation policy
-cd backend && npm install && npm test         # keeper decision logic
+forge test                                    # 67 contract tests
+cd agent-runtime && npm test                  # hashing, capabilities, negotiation policy
+cd backend && npm test                        # guardrails, verification, arbiter rules, AI fallbacks, keeper
+cd backend && npm run load-test               # 5–10 concurrent agent deals on BSC Testnet (see below)
 ```
+
+### Load test
+
+`npm run load-test` (with the API and host running) creates `LOAD_BUYERS` hosted buyers (default 5) across the four capabilities, funds them by minting mUSDT with the owner key, activates them at once and follows every deal to a final escrow. It reports each deal's time and outcome, the average time, how many AI calls hit HTTP 429 and how many fell back to rules or code at each stage.
+
+Result on BSC Testnet (28 Sep 2026, 5 buyers at once, one per capability plus a second translation):
+
+| Deal | Agreed price | Verification | Outcome | Time |
+|---|---|---|---|---|
+| Crypto Market Brief | 0.15 | 95 | SETTLED | 308 s |
+| Translation | 0.09 | 95 | SETTLED | 331 s |
+| Transaction Explainer | 0.13 | 95 | SETTLED | 331 s |
+| Data Analysis | 0.16 | 95 | SETTLED | 383 s |
+| Translation | 0.08 | — (fallback) | SETTLED | 384 s |
+
+5/5 deals settled, **347 s** on average from activation to a final escrow (with a 5 s host polling interval and BSC Testnet block times). 32 AI attempts, 29 successful. All 20 negotiation moves and all 5 executions ran on Groq. Five simultaneous verifications **hit HTTP 429 twice** on Groq's preview verification model: one of those was answered by Gemini instead, the other found Gemini busy (503) and **fell back** — that deal settled without a score and without a rating, exactly as designed. (Gemini now defaults to `gemini-3.5-flash-lite`, which answered every call during testing.)
 
 ---
 
 ## Repository structure
 
 ```
-├── contracts/
-│   └── AgentEco.sol        Escrow, disputes and reputation contract
-├── frontend/               Next.js landing page and dApp
-│   ├── app/                Routes: /, /app/marketplace, /app/agents, /app/orders, /app/disputes, ...
-│   ├── components/         UI (landing/ and app/)
-│   └── lib/web3/           Network config, ABI, wagmi hooks, event scans
+├── contracts/            AgentEco.sol (escrow, disputes, ratings), MockUSDT.sol
+├── test/                 Foundry tests, including fuzz and invariants
+├── script/               Deploy script
+├── agent-runtime/        Shared library: hashing, capability schemas and code, negotiation policy, onchain clients
 ├── backend/
-│   ├── prisma/             Database schema
+│   ├── prisma/           Database schema
+│   ├── scripts/          seedDemoSellers.ts, loadTest.ts
 │   └── src/
-│       ├── server.ts       REST API
-│       ├── hostMain.ts     Host runtime for hosted agents
-│       ├── host/           Hosted buyer and seller logic
-│       ├── index.ts        Keeper
-│       └── routes/         agents, negotiations, orders, escrow-results, disputes
-├── agent-runtime/          Shared agent library: negotiation policy, onchain client
-├── buyer-agent/            Standalone self-custody buyer agent (optional demo process)
-└── seller-agent/           Standalone self-custody seller agent (optional demo process)
+│       ├── server.ts     REST API
+│       ├── hostMain.ts   Hosted buyers, sellers and the AI arbiter
+│       ├── ai/           callLLM, prompts, guardrails, verifier, arbiter
+│       ├── host/         Hosted agent logic
+│       ├── index.ts      Keeper
+│       └── routes/       agents, tasks, negotiations, orders, results, disputes, ratings
+├── frontend/             Next.js landing page and dApp
+├── buyer-agent/          Self-hosted buyer example
+└── seller-agent/         Self-hosted seller example
 ```
-
-`buyer-agent/` and `seller-agent/` show that any developer can run their own agent against AgentEco with their own keys, using the same API and contract as the hosted agents.
 
 ---
 
-## MVP assumptions and limitations
+## Limitations
 
-- **Four fixed capabilities.** Translation, data analysis, crypto market briefs and transaction explanations: code computes the facts (CSV statistics, CoinGecko data, decoded transactions) and an AI model (Groq, with Gemini as fallback) writes the prose. Without a model, the three data capabilities deliver the code-only result marked "AI unavailable"; translation is not delivered and the buyer is refunded.
-- **Custodial hosted agents.** Hosted agent keys are encrypted at rest, but AgentEco's host can sign for them. This is a convenience trade-off for the MVP, not a production custody model.
-- **Single trusted arbiter.** One wallet resolves disputes, and a dispute has no time limit.
-- **Off-chain negotiation.** Offers live in the API database. Only the agreed escrow and its outcome are onchain.
-- **One purchase per hosted buyer.** A hosted buyer completes one deal, then refunds the rest of its budget.
-- **Unaudited contract.** Use small amounts only.
+- **Custodial hosted agents.** Hosted agent keys are encrypted at rest, but the host can sign for them. A convenience trade-off for the demo, not a production custody model.
+- **Centralized arbiter.** One wallet rules disputes, and its key lives in the backend so the AI ruling can execute on its own. A human can approve or reverse within the override window by importing the same key into MetaMask.
+- **Free-tier AI.** Groq and Gemini free plans can be slow or rate-limited when busy; the app then falls back to rules and code, and results may say "AI unavailable". One of the Groq models (`qwen3.8-27b`) is a preview model.
+- **Do not put sensitive data in a Task Brief.** Briefs, results and dispute texts are public by design, so that anyone can check their hashes.
+- **Shortened timers.** The demo uses minutes; production values are in [Timers](#timers).
+- **Test tokens only.** mUSDT has no value, and the contract is unaudited.
+- **One purchase per hosted buyer.** A hosted buyer completes one deal, then returns the rest of its budget.
 
 ## Roadmap
 
-- Real task integrations and an SDK so third-party agents can plug in their own capabilities.
-- Non-custodial hosted agents (smart accounts with spending limits and session keys).
-- Decentralized arbitration (multisig or juror pool) with dispute deadlines.
-- Recurring and streaming payments for long-running agent jobs.
-- Richer reputation: per-capability scores and buyer ratings.
-- External audit and a full contract test suite.
+- Two-step arbiter handover and a reentrancy guard on the contract.
+- A multisig (then decentralized) arbiter.
+- Non-custodial hosted agents with session keys and smart accounts.
+- An open capability registry, so developers can publish new capabilities with their own schemas.
+- A developer SDK for self-hosted agents.
