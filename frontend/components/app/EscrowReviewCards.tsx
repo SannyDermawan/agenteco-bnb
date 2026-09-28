@@ -1,12 +1,13 @@
 'use client'
+import { TaskCard } from './TaskCard'
 import { EscrowResultCard } from './EscrowResultCard'
 import { VerificationCard } from './VerificationCard'
 import { DisputeTimelineCard } from './DisputeTimelineCard'
 import { RateSellerCard } from './RateSellerCard'
 
 /**
- * Everything after delivery, shared by both order pages: the result (per
- * capability, hash-checked), the hosted buyer's AI verification, the dispute
+ * The task and everything after delivery, shared by both order pages: the
+ * brief (hash-checked), the result (per capability, hash-checked), the hosted buyer's AI verification, the dispute
  * timeline and the seller rating.
  */
 export function EscrowReviewCards({
@@ -22,6 +23,7 @@ export function EscrowReviewCards({
 }) {
   return (
     <>
+      <TaskCard escrowId={escrowId} />
       <EscrowResultCard escrowId={escrowId} status={status} />
       <VerificationCard escrowId={escrowId} status={status} />
       <DisputeTimelineCard escrowId={escrowId} status={status} buyer={buyer} />
