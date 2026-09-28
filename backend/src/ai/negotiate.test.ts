@@ -68,3 +68,28 @@ test('after the last round the session ends even if the model wants to continue'
   assert.equal(move.action, 'reject')
   assert.equal(move.source, 'rule')
 })
+
+test('a reason that calls the price its minimum is replaced, even without the number', async () => {
+  const move = await decideTurn(ctx(seller, 0.25, ai('accept', 0.25, 'Your offer matches our minimum acceptable price.'), 1))
+  assert.equal(move.action, 'accept')
+  assert.equal(move.reason, GENERIC_REASON)
+})
+
+test('a reason quoting a price that is not on the table is replaced (0.287 said, 0.29 sent)', async () => {
+  const move = await decideTurn(ctx(seller, 0.2, ai('counter', 0.287, 'I can meet you at 0.287 for this job.')))
+  assert.equal(move.price, 0.29)
+  assert.equal(move.reason, GENERIC_REASON)
+})
+
+test('a reason quoting the price actually sent or the offer on the table stays', async () => {
+  const move = await decideTurn(ctx(seller, 0.2, ai('counter', 0.28, 'You offered 0.2; I can do 0.28 for this job.')))
+  assert.equal(move.price, 0.28)
+  assert.equal(move.reason, 'You offered 0.2; I can do 0.28 for this job.')
+})
+
+test('prices leave without float noise: counters in cents, accepts at the exact offer', async () => {
+  const counter = await decideTurn(ctx(seller, 0.2, ai('counter', 0.1 + 0.18, 'Fair for the work.')))
+  assert.equal(counter.price, 0.28)
+  const accept = await decideTurn(ctx(seller, 0.1 + 0.15000000000000002, ai('accept', 0.25, 'Fair for the work.'), 1))
+  assert.equal(accept.price, 0.25)
+})

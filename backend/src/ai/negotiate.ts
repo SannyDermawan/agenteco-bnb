@@ -2,7 +2,7 @@ import type { DemoAgentRuntime } from '../../../agent-runtime/src/runtime.ts'
 import { callLLM, type LLMRequest, type LLMResult } from './llm.ts'
 import { negotiationPrompt, type NegotiationTurnInput } from './prompts/negotiation.ts'
 import { negotiationDecision, type NegotiationDecision } from './schemas.ts'
-import { filterLimitLeak } from './sanitize.ts'
+import { filterLimitHints, filterLimitLeak, filterStrayPrices } from './sanitize.ts'
 
 export interface NegotiationMove {
   action: 'counter' | 'accept' | 'reject'
@@ -35,8 +35,36 @@ const cents = (n: number) => Math.round(n * 100) / 100
  * 4. a reason that leaks the private limit is replaced by a generic one;
  * 5. no model answer → the old policy, source "rule", no reason.
  * The old policy also still ends the session after the last round.
+ *
+ * Every move then passes finishMove: counters in whole cents, accepts at the
+ * exact offer, and a reason that hints at the limit in words or quotes a price
+ * that isn't on the table is replaced too.
  */
 export async function decideTurn(ctx: TurnContext): Promise<NegotiationMove> {
+  return finishMove(ctx, await proposeMove(ctx))
+}
+
+/** Strips float noise (0.07000000000000001) without rounding a real 0.085 away. */
+const exact = (n: number) => Number(n.toFixed(6))
+
+function finishMove(ctx: TurnContext, move: NegotiationMove): NegotiationMove {
+  const price = move.price === undefined ? undefined : move.action === 'accept' ? exact(move.price) : cents(move.price)
+  let reason = move.reason
+  if (reason) {
+    reason = filterLimitHints(reason).reason
+    const onTheTable = [
+      price ?? NaN,
+      ctx.offeredPrice,
+      ctx.listingPrice,
+      ...ctx.history.map((m) => m.price ?? NaN),
+      ...(ctx.otherSellerPrices ?? []),
+    ]
+    reason = filterStrayPrices(reason, onTheTable).reason
+  }
+  return { ...move, ...(price !== undefined && { price }), reason }
+}
+
+async function proposeMove(ctx: TurnContext): Promise<NegotiationMove> {
   const { role, basePrice, minimumPrice, maxBudget } = ctx.runtime.config
   const isSeller = role === 'seller'
   // Seller: floor = its minimum. Buyer: ceiling = its max budget, and never above the listing.

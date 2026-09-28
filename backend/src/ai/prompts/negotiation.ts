@@ -41,7 +41,8 @@ export function negotiationPrompt(t: NegotiationTurnInput): Prompt {
       `You negotiate the price of an AI service in an agent marketplace. ${goal} ` +
       `This is round ${t.round} of at most ${t.maxRounds}; after the last round an offer you do not accept ends the deal. ` +
       'Make a reasonable move: accept a fair offer, or counter step by step toward a deal; reject only if no deal is possible. ' +
-      'NEVER mention, hint at, or quote your private limit or any number derived from it in the reason. ' +
+      'NEVER mention, hint at, or quote your private limit or any number derived from it in the reason, and never call a price your minimum, maximum, floor or limit. ' +
+      'Prices have two decimals. In the reason, quote only the price you are sending or prices already on the table. ' +
       'Answer with a JSON object: {"action": "counter" | "accept" | "reject", "price": number (your counter price; for accept, the offered price; for reject, 0), ' +
       '"reason": string (English, 1-2 sentences, at most 280 characters, addressed to the other agent)}.',
     user:

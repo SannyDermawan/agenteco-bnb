@@ -39,7 +39,8 @@ negotiationsRouter.post('/', async (req, res) => {
 
   const parsed = createNegotiationSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
-  const { buyerAgentId, sellerAgentId, capability, price } = parsed.data
+  const { buyerAgentId, sellerAgentId, capability } = parsed.data
+  const price = Number(parsed.data.price.toFixed(6))
 
   const [buyer, seller] = await Promise.all([
     prisma.agent.findUnique({ where: { id: buyerAgentId } }),
@@ -81,7 +82,9 @@ negotiationsRouter.post('/:id/messages', async (req, res) => {
 
   const parsed = negotiationMessageSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
-  const { side, action, price, reason, source, adjusted } = parsed.data
+  const { side, action, reason, source, adjusted } = parsed.data
+  // Float noise (0.1 - 0.03 = 0.07000000000000001) never reaches the database.
+  const price = parsed.data.price === undefined ? undefined : Number(parsed.data.price.toFixed(6))
 
   const negotiation = await prisma.negotiation.findUnique({
     where: { id: req.params.id },
