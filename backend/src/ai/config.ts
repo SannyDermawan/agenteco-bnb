@@ -2,9 +2,11 @@
  * AI configuration from env (spec §6.4). Model ids verified against the
  * providers' docs on 2026-09-27: on Groq's free plan the production models are
  * openai/gpt-oss-20b and openai/gpt-oss-120b (Llama 3.x is enterprise-only now)
- * plus qwen/qwen3.8-27b in preview; Gemini's newest stable free-tier model is
- * gemini-3.8-flash. Each Groq task can use its own model because Groq counts
- * rate limits per model.
+ * plus qwen/qwen3.8-27b in preview. Gemini is the fallback, so it runs
+ * gemini-3.5-flash-lite: on 2026-09-28 gemini-3.8-flash answered 503 "high
+ * demand" on about half the calls and took 6-11 s, while flash-lite answered
+ * every call in ~1 s (it also has the higher free limits). Each Groq task can
+ * use its own model because Groq counts rate limits per model.
  */
 
 export type LLMTask = 'negotiation' | 'execute' | 'verify' | 'seller_defense' | 'arbiter'
@@ -39,7 +41,7 @@ export const GROQ_MODELS: Record<LLMTask, string> = {
   arbiter: env('GROQ_MODEL_ARBITER') ?? 'openai/gpt-oss-120b',
 }
 
-export const GEMINI_MODEL = env('GEMINI_MODEL') ?? 'gemini-3.8-flash'
+export const GEMINI_MODEL = env('GEMINI_MODEL') ?? 'gemini-3.5-flash-lite'
 
 export const LLM_TIMEOUT_MS = positive('LLM_TIMEOUT_MS', 20_000)
 export const LLM_MAX_WAIT_SECONDS = positive('LLM_MAX_WAIT_SECONDS', 10)

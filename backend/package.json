@@ -2,7 +2,7 @@
   "name": "agenteco-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "AgentEco keeper service — permissionless automation for claimExecutionTimeout / finalizeAfterReviewWindow on the deployed AgentEco.sol contract. No user wallets, no reputation logic — the contract remains the source of truth.",
+  "description": "AgentEco keeper service \u2014 permissionless automation for claimExecutionTimeout / finalizeAfterReviewWindow on the deployed AgentEco.sol contract. No user wallets, no reputation logic \u2014 the contract remains the source of truth.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
@@ -11,9 +11,11 @@
     "start:api": "tsx --env-file-if-exists=.env src/server.ts",
     "dev:host": "tsx watch --env-file-if-exists=.env src/hostMain.ts",
     "start:host": "tsx --env-file-if-exists=.env src/hostMain.ts",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.scripts.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "seed:sellers": "tsx --env-file-if-exists=../.env --env-file-if-exists=.env scripts/seedDemoSellers.ts",
+    "load-test": "tsx --env-file-if-exists=../.env --env-file-if-exists=.env scripts/loadTest.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

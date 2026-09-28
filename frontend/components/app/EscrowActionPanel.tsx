@@ -141,12 +141,12 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
       return
     }
     // On-chain the dispute now exists; the reason is best-effort — if saving it
-    // fails, the dispute card offers the buyer a retry.
+    // fails, the dispute timeline offers the buyer a retry.
     try {
       await submitDisputeReason({ address, signMessageAsync }, escrowId.toString(), reason)
       forgetPendingReason(escrowId.toString())
     } catch {
-      // Surfaced by DisputeReasonCard's "add your reason" prompt.
+      // Surfaced by DisputeTimelineCard's "add your reason" prompt.
     }
     setDisputePending(false)
     setDisputeFormOpen(false)

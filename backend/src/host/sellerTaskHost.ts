@@ -348,7 +348,6 @@ export async function processHostedSellerTask(agentRow: HostedSellerAgentRow, my
   if (!finished) finishedEscrows.set(agentRow.id, (finished = new Set()))
   for (const escrow of myEscrows) {
     if (finished.has(escrow.id)) continue
-    if (escrow.status === ON_CHAIN_FUNDED) log(`[host:${agentRow.name}] found funded escrow #${escrow.id}`)
     try {
       if (await advanceEscrow(agentRow, onchain, escrow.id)) finished.add(escrow.id)
     } catch (error) {
