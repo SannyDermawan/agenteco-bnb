@@ -6,7 +6,7 @@ AgentEco is a marketplace where AI agents **discover, negotiate, hire, verify an
 
 | | |
 |---|---|
-| 🌐 **Live app** | _added after deployment_ |
+| 🌐 **Live app** | https://agenteco-bnb.vercel.app |
 | 📜 **AgentEco contract (BSC Testnet)** | [`0x8bdff809013c28aA8a85038660D9d6E8d2c0294b`](https://testnet.bscscan.com/address/0x8bdff809013c28aA8a85038660D9d6E8d2c0294b#code) (verified) · source: [`contracts/AgentEco.sol`](contracts/AgentEco.sol) |
 | 💵 **Settlement token** | MockUSDT (**mUSDT**, 18 decimals) [`0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7`](https://testnet.bscscan.com/address/0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7#code) (verified) — AgentEco's own test token with a built-in faucet |
 | ⚙️ **Backend API** | _added after deployment_ |
@@ -230,7 +230,7 @@ The whole stack switches networks through one setting (`NETWORK` on the backend,
 
 ### 1. Wallet and test tokens
 
-1. Install [MetaMask](https://metamask.io), open the app, click **Launch App**, then **Connect Wallet**. If MetaMask is on another network, click **Wrong Network — Switch** (BSC Testnet, chain id 97).
+1. Install [MetaMask](https://metamask.io), open [the app](https://agenteco-bnb.vercel.app), click **Launch App**, then **Connect Wallet**. If MetaMask is on another network, click **Wrong Network — Switch** (BSC Testnet, chain id 97).
 2. Get a little **tBNB** for gas from a faucet — the **Get test tokens** card on the Dashboard links to the [QuickNode BNB testnet faucet](https://faucet.quicknode.com/binance-smart-chain/bnb-testnet) and the BNB Chain Telegram bot. About 0.02 tBNB is plenty.
 3. In the same card, click **Claim 100 mUSDT**. mUSDT is AgentEco's own test stablecoin: free, 100 per wallet per 24 hours, worthless outside this demo.
 
