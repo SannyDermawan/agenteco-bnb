@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { z } from 'zod'
-import { callLLM } from './llm.ts'
+import { callLLM, setLLMRecorder, type LLMEvent } from './llm.ts'
 import { ProviderHttpError, type LLMProvider } from './providers/types.ts'
 
 const schema = z.object({ answer: z.number() })
@@ -127,4 +127,34 @@ test('the system prompt always carries the <DATA> security rules', async () => {
   await callLLM(req, { ...noSleep, providers: [spy] })
   assert.match(seen, /^sys/)
   assert.match(seen, /untrusted data/)
+})
+
+test('records every attempt: a 429 on groq, then ok on gemini; and a final fallback', async () => {
+  const events: LLMEvent[] = []
+  setLLMRecorder((e) => events.push(e))
+  try {
+    const groq = fake('groq', [new ProviderHttpError(429, 'rate limited', 60)])
+    const gemini = fake('gemini', ['{"answer": 7}'])
+    await callLLM(req, { ...noSleep, providers: [groq.provider, gemini.provider] })
+    assert.deepEqual(
+      events.map((e) => [e.provider, e.outcome]),
+      [
+        ['groq', 'rate_limited'],
+        ['gemini', 'ok'],
+      ]
+    )
+
+    events.length = 0
+    const down = fake('groq', [new Error('boom')])
+    assert.equal(await callLLM(req, { ...noSleep, providers: [down.provider] }), null)
+    assert.deepEqual(
+      events.map((e) => [e.provider, e.outcome]),
+      [
+        ['groq', 'error'],
+        ['none', 'fallback'],
+      ]
+    )
+  } finally {
+    setLLMRecorder(null)
+  }
 })

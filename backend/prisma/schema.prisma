@@ -264,3 +264,22 @@ model Dispute {
 
   @@map("disputes")
 }
+
+/**
+ * One row per AI provider attempt (and per fallback), for the load test's
+ * 429 / fallback counts and for spotting a struggling provider. Never the
+ * prompt or the answer — only what happened.
+ */
+model AiCall {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  task      String // negotiation | execute | verify | seller_defense | arbiter
+  provider  String // groq | gemini | none
+  model     String?
+  outcome   String // ok | invalid | rate_limited | error | fallback | over_budget
+  ms        Int?
+  agentId   String?  @map("agent_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@map("ai_calls")
+}

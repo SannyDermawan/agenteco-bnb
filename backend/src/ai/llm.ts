@@ -25,6 +25,31 @@ export interface LLMResult<T> {
   model: string
 }
 
+export type LLMOutcome = 'ok' | 'invalid' | 'rate_limited' | 'error' | 'fallback' | 'over_budget'
+
+export interface LLMEvent {
+  task: LLMTask
+  provider: string
+  model: string | null
+  outcome: LLMOutcome
+  ms: number | null
+  agentId?: string
+}
+
+// Where each attempt is reported (the host and API install a database writer
+// at startup — see aiCallLog.ts). Unset in tests, so they never touch a DB.
+let recorder: ((event: LLMEvent) => void) | null = null
+export function setLLMRecorder(fn: ((event: LLMEvent) => void) | null): void {
+  recorder = fn
+}
+function record(event: LLMEvent): void {
+  try {
+    recorder?.(event)
+  } catch {
+    // Telemetry never breaks an AI call.
+  }
+}
+
 export interface LLMDeps {
   providers: LLMProvider[]
   sleep: (ms: number) => Promise<void>
@@ -70,6 +95,7 @@ export async function callLLM<T>(req: LLMRequest<T>, deps: Partial<LLMDeps> = {}
   const d = { ...defaultDeps, ...deps }
   if (req.agentId && !d.takeSlot(req.agentId)) {
     log(`[ai] ${req.task}: agent ${req.agentId} is over its hourly AI budget — using fallback`)
+    record({ task: req.task, provider: 'none', model: null, outcome: 'over_budget', ms: null, agentId: req.agentId })
     return null
   }
 
@@ -94,6 +120,7 @@ export async function callLLM<T>(req: LLMRequest<T>, deps: Partial<LLMDeps> = {}
         const result = req.schema.safeParse(parsed)
         if (result.success) {
           log(`[ai] ${req.task} ok via ${provider.name}/${model} in ${ms()}ms`)
+          record({ task: req.task, provider: provider.name, model, outcome: 'ok', ms: ms(), agentId: req.agentId })
           return { data: result.data, provider: provider.name, model }
         }
         const issues = parsed === undefined ? 'The answer was not valid JSON.' : result.error.issues
@@ -101,11 +128,14 @@ export async function callLLM<T>(req: LLMRequest<T>, deps: Partial<LLMDeps> = {}
           .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
           .join('; ')
         log(`[ai] ${req.task} invalid output from ${provider.name}/${model} (${ms()}ms)${validationRetried ? ' — next provider' : ' — retrying once'}`)
+        record({ task: req.task, provider: provider.name, model, outcome: 'invalid', ms: ms(), agentId: req.agentId })
         if (validationRetried) break
         validationRetried = true
         user = `${req.user}\n\nYour previous answer was rejected: ${issues}\nAnswer again with only the JSON object in the required shape.`
       } catch (error) {
-        const retryAfter = error instanceof ProviderHttpError && error.status === 429 ? error.retryAfterSec : undefined
+        const rateLimited = error instanceof ProviderHttpError && error.status === 429
+        record({ task: req.task, provider: provider.name, model, outcome: rateLimited ? 'rate_limited' : 'error', ms: ms(), agentId: req.agentId })
+        const retryAfter = rateLimited ? (error as ProviderHttpError).retryAfterSec : undefined
         if (retryAfter !== undefined && retryAfter <= d.maxWaitSeconds && !waited) {
           log(`[ai] ${req.task} rate-limited by ${provider.name}/${model}; waiting ${retryAfter}s`)
           waited = true
@@ -119,5 +149,6 @@ export async function callLLM<T>(req: LLMRequest<T>, deps: Partial<LLMDeps> = {}
   }
 
   log(`[ai] ${req.task}: no provider succeeded — using fallback`)
+  record({ task: req.task, provider: 'none', model: null, outcome: 'fallback', ms: null, agentId: req.agentId })
   return null
 }

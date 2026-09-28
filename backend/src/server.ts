@@ -8,6 +8,7 @@ import { escrowResultsRouter } from './routes/escrowResults.ts'
 import { disputesRouter } from './routes/disputes.ts'
 import { tasksRouter } from './routes/tasks.ts'
 import { ratingsRouter, verificationsRouter } from './routes/ratings.ts'
+import { aiCallsRouter } from './ai/aiCallLog.ts'
 import { log, logError } from './log.ts'
 import { createPublicClient } from 'viem'
 import { AGENT_ECO_ADDRESS, NETWORK, assertRpcMatchesNetwork, appChain, appTransport } from './network.ts'
@@ -37,6 +38,7 @@ app.use('/disputes', disputesRouter)
 app.use('/tasks', tasksRouter)
 app.use('/ratings', ratingsRouter)
 app.use('/verifications', verificationsRouter)
+app.use('/ai-calls', aiCallsRouter)
 
 // Refuse to serve a mainnet frontend from a testnet RPC (or vice versa).
 assertRpcMatchesNetwork(() => createPublicClient({ chain: appChain, transport: appTransport() }).getChainId()).catch((error) => {

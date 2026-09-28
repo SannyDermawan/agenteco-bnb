@@ -3,6 +3,7 @@ import { runHostCycleOnce } from './host/buyerTaskHost.ts'
 import { runSellerHostCycleOnce } from './host/sellerTaskHost.ts'
 import { initArbiter, runArbiterCycleOnce } from './host/arbiter.ts'
 import { indexRecentRatings } from './ratings.ts'
+import { installAiCallLog } from './ai/aiCallLog.ts'
 import { createPublicClient } from 'viem'
 import { AGENT_ECO_ADDRESS, TOKEN_SYMBOL, USDT_ADDRESS, assertRpcMatchesNetwork, appChain, appTransport } from './network.ts'
 import {
@@ -12,6 +13,8 @@ import {
 } from '../../agent-runtime/src/durations.ts'
 
 setLogTag('HOST')
+// Every AI attempt the host makes is counted (GET /ai-calls/stats).
+installAiCallLog()
 
 const INTERVAL_MS = Number(process.env.HOST_INTERVAL_MS ?? 5000)
 const RATING_SCAN_MS = 60_000
