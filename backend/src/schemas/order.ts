@@ -10,5 +10,5 @@ export const listOrdersQuerySchema = z.object({
 })
 
 export const fundOrderSchema = z.object({
-  escrowId: z.string().min(1),
+  escrowId: z.string().regex(/^\d{1,30}$/, 'escrowId must be a number'),
 })

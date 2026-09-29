@@ -56,7 +56,7 @@ async function publishPending(name: string, escrowId: bigint): Promise<void> {
 }
 
 async function handleNegotiations(runtime: DemoAgentRuntime, account: LocalAccount, agentId: string): Promise<void> {
-  const negotiations = await listNegotiationsForAgent(API_URL, agentId, 'open')
+  const negotiations = await listNegotiationsForAgent(API_URL, account, agentId, 'open')
   for (const negotiation of negotiations) {
     if (!isMyTurn(negotiation, 'seller')) continue
 
@@ -95,7 +95,7 @@ async function advanceEscrow(runtime: DemoAgentRuntime, onchain: Onchain, escrow
   }
 
   // 1. The brief, from the API — the buyer links it right after funding.
-  const task = await getTaskByEscrow(API_URL, escrowId.toString())
+  const task = await getTaskByEscrow(API_URL, escrowId.toString(), onchain.account)
   if (!task) return false
 
   // 2. It must be exactly what the buyer committed on-chain, for this seller.

@@ -5,13 +5,24 @@ import { canonicalize } from '../../../agent-runtime/src/shared/hashes.ts'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { prisma, prismaWithAgentKey } from '../db.ts'
 import { verifyOwnerAuth } from '../auth.ts'
+import { UUID_REGEX, agentView, isAgentOwner, optionalViewer, visibleAgentsFilter } from '../access.ts'
 import { encryptAgentKey } from '../agentKeyCrypto.ts'
 import { findBlockingWork, withdrawHostedWallet } from '../agentDeletion.ts'
 import { createAgentSchema, listAgentsQuerySchema, updateAgentSchema } from '../schemas/agent.ts'
 
 export const agentsRouter = Router()
 
+// Postgres rejects a non-uuid id outright — that's a 404, not a server error.
+agentsRouter.param('id', (_req, res, next, id: string) => {
+  if (!UUID_REGEX.test(id)) return res.status(404).json({ error: 'Agent not found' })
+  next()
+})
+
+// Sellers are the public marketplace; a buyer agent (and its task) is listed
+// only to its owner. Private settings are stripped for everyone else.
 agentsRouter.get('/', async (req, res) => {
+  const viewer = await optionalViewer(req, res)
+  if (viewer === undefined) return
   const parsed = listAgentsQuerySchema.safeParse(req.query)
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() })
@@ -20,33 +31,40 @@ agentsRouter.get('/', async (req, res) => {
 
   const agents = await prisma.agent.findMany({
     where: {
-      deletedAt: null,
+      AND: [
+        { deletedAt: null },
+        visibleAgentsFilter(viewer),
+        ...(q
+          ? [
+              {
+                OR: [
+                  { name: { contains: q, mode: 'insensitive' as const } },
+                  { description: { contains: q, mode: 'insensitive' as const } },
+                  { service: { contains: q, mode: 'insensitive' as const } },
+                ],
+              },
+            ]
+          : []),
+      ],
       ...(role && { role }),
       ...(isOnline !== undefined && { isOnline }),
       ...(capability && { capabilities: { has: capability } }),
       ...(ownerWallet && { ownerWallet: { equals: ownerWallet, mode: 'insensitive' } }),
       ...(taskStatus && { taskStatus }),
-      ...(q && {
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { description: { contains: q, mode: 'insensitive' } },
-          { service: { contains: q, mode: 'insensitive' } },
-        ],
-      }),
     },
     orderBy: { createdAt: 'desc' },
   })
-  res.json(agents)
+  res.json(agents.map((agent) => agentView(agent, viewer)))
 })
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 agentsRouter.get('/:id', async (req, res) => {
-  // Postgres rejects a non-uuid id outright — that's a 404, not a server error.
-  if (!UUID_REGEX.test(req.params.id)) return res.status(404).json({ error: 'Agent not found' })
+  const viewer = await optionalViewer(req, res)
+  if (viewer === undefined) return
   const agent = await prisma.agent.findUnique({ where: { id: req.params.id } })
   if (!agent) return res.status(404).json({ error: 'Agent not found' })
-  res.json(agent)
+  // A buyer agent is a private task: it does not exist for anyone but its owner.
+  if (agent.role === 'buyer' && !isAgentOwner(viewer, agent)) return res.status(404).json({ error: 'Agent not found' })
+  res.json(agentView(agent, viewer))
 })
 
 // Creating an agent claims a wallet as its owner — that claim must be
@@ -147,6 +165,15 @@ agentsRouter.patch('/:id', async (req, res) => {
   }
   if (parsed.data.isOnline && existing.role === 'seller' && existing.taskStatus === 'awaiting_deposit') {
     return res.status(400).json({ error: 'Deposit gas and activate this agent before putting it online' })
+  }
+  // AgentEco generated a hosted agent's wallet and holds its key; pointing the
+  // agent at another address would let its owner pass as that wallet.
+  if (
+    parsed.data.walletAddress !== undefined &&
+    existing.taskStatus !== null &&
+    parsed.data.walletAddress.toLowerCase() !== existing.walletAddress?.toLowerCase()
+  ) {
+    return res.status(400).json({ error: "A hosted agent's wallet is managed by AgentEco and cannot be changed" })
   }
 
   const agent = await prisma.agent.update({

@@ -11,6 +11,7 @@ import {
   type OnchainClients,
 } from '../../../agent-runtime/src/index.ts'
 import { getTaskByEscrow } from '../../../agent-runtime/src/tasksClient.ts'
+import { buildAuthHeaders } from '../../../agent-runtime/src/authHeaders.ts'
 import { REVIEW_WINDOW_SECONDS } from '../../../agent-runtime/src/durations.ts'
 import { hashPreimage, textHash } from '../../../agent-runtime/src/shared/hashes.ts'
 import { isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
@@ -37,7 +38,7 @@ interface Ctx {
 
 /** The delivered result, only if its stored text hashes to the on-chain resultHash. */
 async function readVerifiedResult(ctx: Ctx): Promise<{ capability: string; result: unknown } | null> {
-  const res = await fetch(`${ctx.apiUrl}/escrow-results/${ctx.escrowId}`)
+  const res = await fetch(`${ctx.apiUrl}/escrow-results/${ctx.escrowId}`, { headers: await buildAuthHeaders(ctx.account) })
   if (!res.ok) return null
   const stored = (await res.json()) as { capability: string; result: unknown; resultJson: string | null }
   if (!stored.resultJson) return null
@@ -69,7 +70,7 @@ async function verifyDelivery(ctx: Ctx) {
     })
   }
 
-  const task = await getTaskByEscrow(ctx.apiUrl, ctx.escrowId.toString())
+  const task = await getTaskByEscrow(ctx.apiUrl, ctx.escrowId.toString(), ctx.account)
   const capability = task?.capability ?? delivered.capability
   if (!isCapabilityId(capability)) throw new Error(`escrow #${ctx.escrowId}: unknown capability "${capability}"`)
   const outcome = await verifyResult(
@@ -99,7 +100,7 @@ function reasonFor(v: { score: number | null; rationale: string; provider: strin
 
 /** Sends the reason text if the API doesn't have it yet, after checking it matches the on-chain hash. */
 async function ensureReasonSaved(ctx: Ctx): Promise<void> {
-  const res = await fetch(`${ctx.apiUrl}/disputes/${ctx.escrowId}`)
+  const res = await fetch(`${ctx.apiUrl}/disputes/${ctx.escrowId}`, { headers: await buildAuthHeaders(ctx.account) })
   if (res.ok) return
   const v = await prisma.verification.findUnique({ where: { escrowId: ctx.escrowId.toString() } })
   if (!v) return

@@ -24,19 +24,19 @@ async function parseOrThrow(res: Response, action: string): Promise<any> {
   return res.json()
 }
 
-export async function findOwnAgent(apiUrl: string, ownerWallet: string): Promise<RegistryAgent | null> {
-  const res = await fetch(`${apiUrl}/agents?ownerWallet=${ownerWallet}`)
+/** Signed, so a buyer agent (listed only to its owner) finds itself too. */
+export async function findOwnAgent(apiUrl: string, owner: LocalAccount): Promise<RegistryAgent | null> {
+  const res = await fetch(`${apiUrl}/agents?ownerWallet=${owner.address}`, { headers: await buildAuthHeaders(owner) })
   const agents: RegistryAgent[] = await parseOrThrow(res, 'Registry lookup')
   return agents[0] ?? null
 }
 
+/** A seller's public profile — its negotiation limit and instructions are never shown to others. */
 export interface DiscoveredAgent extends RegistryAgent {
   name: string
   role: 'buyer' | 'seller'
   capabilities: string[]
   price: string
-  minimumPrice: string | null
-  maxBudget: string | null
   walletAddress: string | null
 }
 
@@ -84,8 +84,7 @@ export async function registerOrSyncSelf(config: AgentConfig, options: RegisterO
     isOnline: true,
   }
 
-  const ownerWallet = options.account.address
-  const existing = await findOwnAgent(options.apiUrl, ownerWallet)
+  const existing = await findOwnAgent(options.apiUrl, options.account)
   const authHeaders = await buildAuthHeaders(options.account)
 
   if (existing) {

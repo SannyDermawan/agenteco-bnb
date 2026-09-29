@@ -1,20 +1,32 @@
 import { Router } from 'express'
 import { prisma } from '../db.ts'
 import { isAuthorizedForAgent, verifyOwnerAuth } from '../auth.ts'
+import { UUID_REGEX, isArbiter, isPartyOf, partyFilter, requireViewer } from '../access.ts'
 import { createNegotiationSchema, listNegotiationsQuerySchema, negotiationMessageSchema } from '../schemas/negotiation.ts'
 
 export const negotiationsRouter = Router()
 
 const messagesOrderAsc = { messages: { orderBy: { createdAt: 'asc' as const } } }
 
+negotiationsRouter.param('id', (_req, res, next, id: string) => {
+  if (!UUID_REGEX.test(id)) return res.status(404).json({ error: 'Negotiation not found' })
+  next()
+})
+
+// Only negotiations one of the viewer's agents takes part in.
 negotiationsRouter.get('/', async (req, res) => {
+  const viewer = await requireViewer(req, res)
+  if (!viewer) return
   const parsed = listNegotiationsQuerySchema.safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
   const { agentId, status } = parsed.data
 
   const negotiations = await prisma.negotiation.findMany({
     where: {
-      ...(agentId && { OR: [{ buyerAgentId: agentId }, { sellerAgentId: agentId }] }),
+      AND: [
+        partyFilter(viewer),
+        ...(agentId ? [{ OR: [{ buyerAgentId: agentId }, { sellerAgentId: agentId }] }] : []),
+      ],
       ...(status && { status }),
     },
     include: messagesOrderAsc,
@@ -24,12 +36,18 @@ negotiationsRouter.get('/', async (req, res) => {
 })
 
 negotiationsRouter.get('/:id', async (req, res) => {
+  const viewer = await requireViewer(req, res)
+  if (!viewer) return
   const negotiation = await prisma.negotiation.findUnique({
     where: { id: req.params.id },
-    include: messagesOrderAsc,
+    include: { ...messagesOrderAsc, buyerAgent: true, sellerAgent: true },
   })
   if (!negotiation) return res.status(404).json({ error: 'Negotiation not found' })
-  res.json(negotiation)
+  const { buyerAgent, sellerAgent, ...rest } = negotiation
+  if (!isPartyOf(viewer, buyerAgent) && !isPartyOf(viewer, sellerAgent) && !(await isArbiter(viewer))) {
+    return res.status(403).json({ error: 'This negotiation is private — only its buyer, seller and the arbiter can see it.' })
+  }
+  res.json(rest)
 })
 
 // Buyer opens a negotiation with an opening offer (§11: Offer -> ...).

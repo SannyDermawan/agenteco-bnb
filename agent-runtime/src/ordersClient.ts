@@ -24,12 +24,13 @@ async function parseOrThrow(res: Response, action: string): Promise<any> {
 
 export async function listOrdersForAgent(
   apiUrl: string,
+  reader: LocalAccount,
   agentId: string,
   status?: OrderDbStatus
 ): Promise<RegistryOrder[]> {
   const query = new URLSearchParams({ agentId })
   if (status) query.set('status', status)
-  const res = await fetch(`${apiUrl}/orders?${query}`)
+  const res = await fetch(`${apiUrl}/orders?${query}`, { headers: await buildAuthHeaders(reader) })
   return parseOrThrow(res, 'Listing orders')
 }
 

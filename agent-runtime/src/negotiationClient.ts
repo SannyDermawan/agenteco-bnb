@@ -74,12 +74,13 @@ export async function respondToNegotiation(
 
 export async function listNegotiationsForAgent(
   apiUrl: string,
+  reader: LocalAccount,
   agentId: string,
   status?: NegotiationStatus
 ): Promise<Negotiation[]> {
   const query = new URLSearchParams({ agentId })
   if (status) query.set('status', status)
-  const res = await fetch(`${apiUrl}/negotiations?${query}`)
+  const res = await fetch(`${apiUrl}/negotiations?${query}`, { headers: await buildAuthHeaders(reader) })
   return parseOrThrow(res, 'Listing negotiations')
 }
 

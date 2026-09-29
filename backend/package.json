@@ -2,7 +2,7 @@
   "name": "agenteco-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "AgentEco keeper service \u2014 permissionless automation for claimExecutionTimeout / finalizeAfterReviewWindow on the deployed AgentEco.sol contract. No user wallets, no reputation logic \u2014 the contract remains the source of truth.",
+  "description": "AgentEco keeper service — permissionless automation for claimExecutionTimeout / finalizeAfterReviewWindow on the deployed AgentEco.sol contract. No user wallets, no reputation logic — the contract remains the source of truth.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
@@ -23,6 +23,8 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
     "pg": "^8.23.0",
     "viem": "^2.56.8",
     "zod": "^4.6.5"

@@ -37,7 +37,10 @@ export async function createTask(
   return parseOrThrow(res, 'Creating task')
 }
 
-export async function linkTaskEscrow(apiUrl: string, buyer: LocalAccount, taskId: string, escrowId: string): Promise<RegistryTask> {
+/** What linking returns — never the brief (the caller already has it). */
+export type TaskLinkReceipt = Pick<RegistryTask, 'id' | 'escrowId' | 'taskHash' | 'verified'>
+
+export async function linkTaskEscrow(apiUrl: string, buyer: LocalAccount, taskId: string, escrowId: string): Promise<TaskLinkReceipt> {
   const res = await fetch(`${apiUrl}/tasks/${taskId}/escrow`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await buildAuthHeaders(buyer)) },
@@ -46,9 +49,12 @@ export async function linkTaskEscrow(apiUrl: string, buyer: LocalAccount, taskId
   return parseOrThrow(res, 'Linking task to escrow')
 }
 
-/** The task behind an escrow, or null when none was linked (public read). */
-export async function getTaskByEscrow(apiUrl: string, escrowId: string): Promise<RegistryTask | null> {
-  const res = await fetch(`${apiUrl}/tasks/by-escrow/${escrowId}`)
+/**
+ * The task behind an escrow, or null when none was linked. Private to the
+ * escrow's buyer, seller and arbiter, so the reader signs the request.
+ */
+export async function getTaskByEscrow(apiUrl: string, escrowId: string, reader: LocalAccount): Promise<RegistryTask | null> {
+  const res = await fetch(`${apiUrl}/tasks/by-escrow/${escrowId}`, { headers: await buildAuthHeaders(reader) })
   if (res.status === 404) return null
   return parseOrThrow(res, 'Reading task')
 }
@@ -66,5 +72,5 @@ export async function hireWithTask(
   const task = await createTask(apiUrl, clients.account, input)
   const escrowId = await createAndFundEscrow(clients, input.seller, input.price, task.taskHash)
   const linked = await linkTaskEscrow(apiUrl, clients.account, task.id, escrowId.toString())
-  return { escrowId, task: linked }
+  return { escrowId, task: { ...task, ...linked } }
 }

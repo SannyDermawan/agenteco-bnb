@@ -164,7 +164,7 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
   await warnIfLowGas(onchain.publicClient, account.address, `hosted buyer "${agentRow.name}"`, 'hosted')
 
   const maxBudget = Number(agentRow.maxBudget)
-  const allNegotiations = await listNegotiationsForAgent(API_URL, agentRow.id)
+  const allNegotiations = await listNegotiationsForAgent(API_URL, account, agentRow.id)
 
   // 1. Respond to anything awaiting our turn.
   for (const negotiation of allNegotiations.filter((n) => n.status === 'open')) {
@@ -236,7 +236,7 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
 
   // 3. Deal struck but not funded yet? Fund exactly the negotiated price,
   //    then refund whatever's left of the original deposit immediately.
-  const agreedOrders = await listOrdersForAgent(API_URL, agentRow.id, 'agreed')
+  const agreedOrders = await listOrdersForAgent(API_URL, account, agentRow.id, 'agreed')
   for (const order of agreedOrders) {
     const sellerRes = await fetch(`${API_URL}/agents/${order.sellerAgentId}`)
     const seller = (await sellerRes.json()) as { walletAddress: Address | null }
@@ -269,7 +269,7 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
   // 4. Funded: verify the delivery, then settle + rate or dispute (spec §10.1).
   //    The task is done once its escrow is final; whatever the escrow returned
   //    to the agent wallet (a refund) goes back to the owner.
-  const fundedOrders = await listOrdersForAgent(API_URL, agentRow.id, 'funded')
+  const fundedOrders = await listOrdersForAgent(API_URL, account, agentRow.id, 'funded')
   for (const order of fundedOrders) {
     if (!order.escrowId) continue
     const step = await reviewEscrow(API_URL, agentRow, onchain, account, BigInt(order.escrowId))

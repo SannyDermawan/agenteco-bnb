@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '../db.ts'
 import { appChain, appTransport } from '../network.ts'
 import { ratingSummaries, recordRatingsFromTx } from '../ratings.ts'
+import { guardEscrow } from '../access.ts'
 
 export const ratingsRouter = Router()
 export const verificationsRouter = Router()
@@ -25,6 +26,7 @@ ratingsRouter.get('/', async (req, res) => {
 })
 
 ratingsRouter.get('/escrow/:escrowId', async (req, res) => {
+  if (!(await guardEscrow(req, res, req.params.escrowId))) return
   const rating = await prisma.rating.findUnique({ where: { escrowId: req.params.escrowId } })
   if (!rating) return res.status(404).json({ error: 'This escrow has not been rated' })
   res.json(rating)
@@ -47,8 +49,9 @@ ratingsRouter.post('/', async (req, res) => {
   }
 })
 
-// The hosted buyer's AI verification of a delivered result (spec §10.1). Public, like results.
+// The hosted buyer's AI verification of a delivered result (spec §10.1). Private to the deal, like results.
 verificationsRouter.get('/:escrowId', async (req, res) => {
+  if (!(await guardEscrow(req, res, req.params.escrowId))) return
   const verification = await prisma.verification.findUnique({ where: { escrowId: req.params.escrowId } })
   if (!verification) return res.status(404).json({ error: 'No verification for this escrow' })
   res.json(verification)

@@ -5,21 +5,26 @@ const CATEGORIES = ['Research', 'Data', 'Content', 'Automation'] as const
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/
 
 const baseAgentSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1).max(100),
   // Optional here — a buyer doesn't need a description of what it offers
   // (it isn't offering anything). Capability stays required for both roles
   // below: for a seller it's what they offer, for a buyer (esp. a hosted
   // task) it's what the host runtime searches the registry for.
-  description: z.string().min(1).optional(),
+  description: z.string().trim().min(1).max(1000).optional(),
   role: z.enum(['buyer', 'seller']),
   category: z.enum(CATEGORIES).optional(),
-  service: z.string().min(1).optional(),
-  capabilities: z.array(z.string().min(1)).optional(),
+  service: z.string().trim().min(1).max(100).optional(),
+  capabilities: z.array(z.string().min(1)).max(CAPABILITY_IDS.length).optional(),
   price: z.number().nonnegative(),
   minimumPrice: z.number().nonnegative().optional(),
   maxBudget: z.number().nonnegative().optional(),
   walletAddress: z.string().regex(WALLET_REGEX).optional(),
-  endpoint: z.string().url().optional(),
+  endpoint: z
+    .string()
+    .url()
+    .max(500)
+    .refine((url) => /^https?:\/\//i.test(url), 'endpoint must be an http(s) URL')
+    .optional(),
   inputSchema: z.unknown().optional(),
   outputSchema: z.unknown().optional(),
   isOnline: z.boolean().default(true),
@@ -89,7 +94,18 @@ export const createAgentSchema = baseAgentSchema
     capabilities: data.capabilities ?? [],
   }))
 
-export const updateAgentSchema = baseAgentSchema.omit({ hosted: true }).partial()
+// role and hosted are fixed at creation: flipping them would give an agent a
+// wallet, deposit or brief that doesn't match what it does.
+export const updateAgentSchema = baseAgentSchema
+  .omit({ hosted: true, role: true })
+  .partial()
+  .superRefine((data, ctx) => {
+    for (const cap of data.capabilities ?? []) {
+      if (!isCapabilityId(cap)) {
+        ctx.addIssue({ code: 'custom', path: ['capabilities'], message: `Unknown capability "${cap}" — use one of: ${CAPABILITY_IDS.join(', ')}` })
+      }
+    }
+  })
 
 export const listAgentsQuerySchema = z.object({
   role: z.enum(['buyer', 'seller']).optional(),

@@ -3,6 +3,7 @@ import { createPublicClient } from 'viem'
 import { prisma } from '../db.ts'
 import { AGENT_ECO_ADDRESS, appChain, appTransport } from '../network.ts'
 import { verifyOwnerAuth } from '../auth.ts'
+import { guardEscrow, isArbiter, requireViewer } from '../access.ts'
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
 import { buildRationalePreimage, hashPreimage, textHash } from '../../../agent-runtime/src/shared/hashes.ts'
 import { disputeReasonSchema, disputeResolutionSchema, disputeResponseSchema } from '../schemas/dispute.ts'
@@ -31,13 +32,17 @@ function badId(escrowId: string): boolean {
   return !/^\d+$/.test(escrowId)
 }
 
-// Dispute texts are public, like results: the arbiter, both parties and the
-// judges read them, and anyone can re-hash them against the chain.
-disputesRouter.get('/', async (_req, res) => {
+// Dispute texts are private to the escrow's buyer, seller and the arbiter,
+// who can re-hash them against the chain. The full list is the arbiter's queue.
+disputesRouter.get('/', async (req, res) => {
+  const viewer = await requireViewer(req, res)
+  if (!viewer) return
+  if (!(await isArbiter(viewer))) return res.status(403).json({ error: 'Only the arbiter can list every dispute' })
   res.json(await prisma.dispute.findMany({ orderBy: { createdAt: 'desc' } }))
 })
 
 disputesRouter.get('/:escrowId', async (req, res) => {
+  if (!(await guardEscrow(req, res, req.params.escrowId))) return
   const dispute = await prisma.dispute.findUnique({ where: { escrowId: req.params.escrowId } })
   if (!dispute) return res.status(404).json({ error: 'No dispute recorded for this escrow' })
   res.json(dispute)
@@ -162,5 +167,12 @@ disputesRouter.post('/:escrowId/resolution', async (req, res) => {
       resolvedAt: new Date(),
     },
   })
-  res.json(saved)
+  // Unsigned route: confirm the ruling without echoing the private dispute texts.
+  res.json({
+    escrowId: saved.escrowId,
+    resolution: saved.resolution,
+    releasedToSeller: saved.releasedToSeller,
+    rationaleHash: saved.rationaleHash,
+    resolvedAt: saved.resolvedAt,
+  })
 })

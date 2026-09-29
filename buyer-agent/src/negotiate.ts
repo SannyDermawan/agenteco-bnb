@@ -37,7 +37,7 @@ export async function discoverAndNegotiate(
       continue
     }
 
-    const existing = await listNegotiationsForAgent(apiUrl, buyerAgentId)
+    const existing = await listNegotiationsForAgent(apiUrl, account, buyerAgentId)
     const alreadyNegotiating = existing.some(
       (n) => n.sellerAgentId === affordableSeller.id && n.capability === capability && n.status !== 'rejected'
     )

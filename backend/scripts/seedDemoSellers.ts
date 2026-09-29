@@ -99,7 +99,7 @@ interface ApiAgent {
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { 'content-type': 'application/json', ...(method === 'GET' ? {} : await buildAuthHeaders(owner)) },
+    headers: { 'content-type': 'application/json', ...(await buildAuthHeaders(owner)) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await res.text()

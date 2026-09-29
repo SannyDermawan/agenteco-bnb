@@ -33,8 +33,8 @@ async function parseOrThrow<T>(res: Response, action: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function getDispute(apiUrl: string, escrowId: string): Promise<RegistryDispute | null> {
-  const res = await fetch(`${apiUrl}/disputes/${escrowId}`)
+export async function getDispute(apiUrl: string, escrowId: string, reader: LocalAccount): Promise<RegistryDispute | null> {
+  const res = await fetch(`${apiUrl}/disputes/${escrowId}`, { headers: await buildAuthHeaders(reader) })
   if (res.status === 404) return null
   return parseOrThrow(res, 'Reading dispute')
 }

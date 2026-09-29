@@ -5,6 +5,7 @@ import { prisma } from '../db.ts'
 import { buildResultPreimage, hashPreimage } from '../../../agent-runtime/src/shared/hashes.ts'
 import { AGENT_ECO_ADDRESS, appChain, appTransport } from '../network.ts'
 import { createEscrowResultSchema } from '../schemas/escrowResult.ts'
+import { guardEscrow } from '../access.ts'
 
 export const escrowResultsRouter = Router()
 
@@ -20,9 +21,10 @@ const RESULT_HASH_ABI = [
 
 const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 
-// Anyone can read a result — it's just the plaintext behind an on-chain
-// hash, not a secret. No owner-wallet auth needed for reads.
+// The delivered work belongs to the deal: only its buyer, seller and the
+// arbiter can read it (and re-hash it against the chain).
 escrowResultsRouter.get('/:escrowId', async (req, res) => {
+  if (!(await guardEscrow(req, res, req.params.escrowId))) return
   const result = await prisma.escrowResult.findUnique({ where: { escrowId: req.params.escrowId } })
   if (!result) return res.status(404).json({ error: 'No result recorded for this escrow' })
   res.json(result)

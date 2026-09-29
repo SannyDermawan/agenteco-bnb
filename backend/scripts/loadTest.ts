@@ -73,7 +73,7 @@ interface Agent {
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { 'content-type': 'application/json', ...(method === 'GET' ? {} : await buildAuthHeaders(owner)) },
+    headers: { 'content-type': 'application/json', ...(await buildAuthHeaders(owner)) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await res.text()
@@ -162,9 +162,9 @@ async function main(): Promise<void> {
         const agent = await api<Agent>('GET', `/agents/${r.buyer.id}`)
         if ((label === 'SETTLED' || label === 'REFUNDED') && agent.taskStatus === 'completed') {
           r.endedAt = Date.now()
-          const v = await fetch(`${API}/verifications/${order.escrowId}`)
+          const v = await fetch(`${API}/verifications/${order.escrowId}`, { headers: await buildAuthHeaders(owner) })
           r.score = v.ok ? ((await v.json()) as { score: number | null }).score : undefined
-          const d = await fetch(`${API}/disputes/${order.escrowId}`)
+          const d = await fetch(`${API}/disputes/${order.escrowId}`, { headers: await buildAuthHeaders(owner) })
           if (d.ok) {
             r.disputed = true
             r.resolution = ((await d.json()) as { resolution: string | null }).resolution
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
     const orders = await api<{ negotiation: { messages: { source: string }[] } }[]>('GET', `/orders?agentId=${r.buyer.id}`)
     for (const m of orders[0]?.negotiation.messages ?? []) (m.source === 'ai' ? aiMoves++ : ruleMoves++)
     if (!r.escrowId) continue
-    const res = await fetch(`${API}/escrow-results/${r.escrowId}`)
+    const res = await fetch(`${API}/escrow-results/${r.escrowId}`, { headers: await buildAuthHeaders(owner) })
     if (res.ok && ((await res.json()) as { resultJson: string | null }).resultJson?.includes('AI unavailable')) codeOnly++
     if (r.score === null) unscored++
   }

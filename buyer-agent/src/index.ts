@@ -28,7 +28,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function handleNegotiations(runtime: DemoAgentRuntime, account: LocalAccount, agentId: string) {
-  const negotiations = await listNegotiationsForAgent(API_URL, agentId, 'open')
+  const negotiations = await listNegotiationsForAgent(API_URL, account, agentId, 'open')
   for (const negotiation of negotiations) {
     if (!isMyTurn(negotiation, 'buyer')) continue
 
@@ -56,7 +56,7 @@ async function handleAgreedOrders(
   onchain: ReturnType<typeof createOnchainClients>,
   agentId: string
 ) {
-  const orders = await listOrdersForAgent(API_URL, agentId, 'agreed')
+  const orders = await listOrdersForAgent(API_URL, account, agentId, 'agreed')
   for (const order of orders) {
     const sellerRes = await fetch(`${API_URL}/agents/${order.sellerAgentId}`)
     const seller = (await sellerRes.json()) as { walletAddress: `0x${string}` | null }
@@ -84,7 +84,7 @@ async function handleDeliveredOrders(
   onchain: ReturnType<typeof createOnchainClients>,
   agentId: string
 ) {
-  const orders = await listOrdersForAgent(API_URL, agentId, 'funded')
+  const orders = await listOrdersForAgent(API_URL, onchain.account, agentId, 'funded')
   for (const order of orders) {
     if (!order.escrowId) continue
     const escrowId = BigInt(order.escrowId)

@@ -1,5 +1,6 @@
 import { privateKeyToAccount } from 'viem/accounts'
-import { createPublicClient, type Address, type PublicClient } from 'viem'
+import { createPublicClient, type Address, type LocalAccount, type PublicClient } from 'viem'
+import { buildAuthHeaders } from '../../../agent-runtime/src/authHeaders.ts'
 import {
   DemoAgentRuntime,
   respondToNegotiation,
@@ -29,7 +30,7 @@ import { prepareJob, runJob } from '../capabilities/execute.ts'
 import { decideTurn } from '../ai/negotiate.ts'
 import { buildNegotiationExtras } from './negotiationContext.ts'
 import { decryptAgentKey } from '../agentKeyCrypto.ts'
-import { prismaWithAgentKey } from '../db.ts'
+import { prisma, prismaWithAgentKey } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
 import { API_URL, refundLeftover } from './buyerTaskHost.ts'
@@ -86,8 +87,8 @@ const ZERO_HASH = `0x${'0'.repeat(64)}`
 
 const publicClient = createPublicClient({ chain: appChain, transport: appTransport() })
 
-async function hasPublishedResult(escrowId: bigint): Promise<boolean> {
-  const res = await fetch(`${API_URL}/escrow-results/${escrowId}`)
+async function hasPublishedResult(reader: LocalAccount, escrowId: bigint): Promise<boolean> {
+  const res = await fetch(`${API_URL}/escrow-results/${escrowId}`, { headers: await buildAuthHeaders(reader) })
   return res.ok
 }
 
@@ -136,7 +137,7 @@ async function advanceEscrow(
 
   if (status === ON_CHAIN_FUNDED || status === ON_CHAIN_EXECUTING) {
     // The buyer links the task right after funding — until then, wait.
-    const task = await getTaskByEscrow(API_URL, escrowId.toString())
+    const task = await getTaskByEscrow(API_URL, escrowId.toString(), onchain.account)
     if (!task) {
       if (!waitingForTask.has(escrowId)) log(`[host:${label}] escrow #${escrowId} is funded — waiting for its task brief…`)
       waitingForTask.add(escrowId)
@@ -195,7 +196,7 @@ async function advanceEscrow(
   if (status === ON_CHAIN_DELIVERED || status === ON_CHAIN_SETTLED || status === ON_CHAIN_DISPUTED) {
     if (unpublished.has(escrowId)) {
       await publishPending(label, escrowId)
-    } else if (!missingResultLogged.has(escrowId) && !(await hasPublishedResult(escrowId))) {
+    } else if (!missingResultLogged.has(escrowId) && !(await hasPublishedResult(onchain.account, escrowId))) {
       // Delivered before a restart whose publish never landed: the exact
       // result is gone, so there's nothing to re-send.
       missingResultLogged.add(escrowId)
@@ -247,11 +248,11 @@ async function defendIfDue(agentRow: HostedSellerAgentRow, onchain: OnchainClien
   }
 
   // The buyer's reason reaches the API right after raiseDispute.
-  const dispute = await getDispute(API_URL, escrowId.toString())
+  const dispute = await getDispute(API_URL, escrowId.toString(), onchain.account)
   if (!dispute) return
   const [task, resultRes] = await Promise.all([
-    getTaskByEscrow(API_URL, escrowId.toString()),
-    fetch(`${API_URL}/escrow-results/${escrowId}`),
+    getTaskByEscrow(API_URL, escrowId.toString(), onchain.account),
+    fetch(`${API_URL}/escrow-results/${escrowId}`, { headers: await buildAuthHeaders(onchain.account) }),
   ])
   const stored = resultRes.ok ? ((await resultRes.json()) as { resultJson: string | null }) : null
   if (!task || !stored?.resultJson || !isCapabilityId(task.capability)) {
@@ -303,17 +304,19 @@ export async function processHostedSellerTask(agentRow: HostedSellerAgentRow, my
   //    outage never blocks step 2 — funded escrows are on-chain obligations
   //    with an execution deadline, and only need the chain to be worked.
   try {
-    const negotiations = await listNegotiationsForAgent(API_URL, agentRow.id, 'open')
+    const negotiations = await listNegotiationsForAgent(API_URL, account, agentRow.id, 'open')
     for (const negotiation of negotiations) {
       if (!isMyTurn(negotiation, 'seller')) continue
       const lastMessage = negotiation.messages[negotiation.messages.length - 1]
       const offeredPrice = Number(lastMessage.price)
 
-      // The buyer's brief only feeds the job's size to the model, never its content.
+      // The buyer's brief only feeds the job's size to the model, never its
+      // content. Read here, inside the backend: the API never shows a buyer's
+      // brief to a seller before the deal.
       let taskBrief: unknown = null
       try {
-        const buyerRes = await fetch(`${API_URL}/agents/${negotiation.buyerAgentId}`)
-        if (buyerRes.ok) taskBrief = ((await buyerRes.json()) as { taskBrief?: unknown }).taskBrief ?? null
+        const buyer = await prisma.agent.findUnique({ where: { id: negotiation.buyerAgentId }, select: { taskBrief: true } })
+        taskBrief = buyer?.taskBrief ?? null
       } catch {
         taskBrief = null
       }

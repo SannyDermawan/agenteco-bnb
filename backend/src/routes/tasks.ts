@@ -4,6 +4,7 @@ import { createPublicClient, parseUnits } from 'viem'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../db.ts'
 import { verifyOwnerAuth } from '../auth.ts'
+import { UUID_REGEX, canViewParties, guardEscrow, requireViewer } from '../access.ts'
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
 import { ERC20_ABI } from '../../../agent-runtime/src/onchain/abi.ts'
 import { AGENT_ECO_ADDRESS, USDT_ADDRESS, appChain, appTransport } from '../network.ts'
@@ -80,10 +81,11 @@ tasksRouter.post('/:id/escrow', async (req, res) => {
   const parsed = linkTaskEscrowSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'escrowId must be a number' })
 
+  if (!UUID_REGEX.test(req.params.id)) return res.status(404).json({ error: 'Task not found' })
   const task = await prisma.task.findUnique({ where: { id: req.params.id } })
   if (!task) return res.status(404).json({ error: 'Task not found' })
   if (task.escrowId) {
-    return task.escrowId === parsed.data.escrowId ? res.json(task) : res.status(409).json({ error: 'Task already linked to another escrow' })
+    return task.escrowId === parsed.data.escrowId ? res.json(linkReceipt(task)) : res.status(409).json({ error: 'Task already linked to another escrow' })
   }
 
   const escrowId = BigInt(parsed.data.escrowId)
@@ -110,18 +112,32 @@ tasksRouter.post('/:id/escrow', async (req, res) => {
   }
 
   const linked = await prisma.task.update({ where: { id: task.id }, data: { escrowId: parsed.data.escrowId, verified: true } })
-  res.json(linked)
+  res.json(linkReceipt(linked))
 })
 
-// Public: the brief and its preimage — anyone can re-hash it against the chain.
+/** What an unsigned link call gets back: never the brief itself. */
+function linkReceipt(task: { id: string; escrowId: string | null; taskHash: string; verified: boolean }) {
+  return { id: task.id, escrowId: task.escrowId, taskHash: task.taskHash, verified: task.verified }
+}
+
+// The brief and its preimage — only for the escrow's buyer, seller and the
+// arbiter, who can re-hash it against the chain.
 tasksRouter.get('/by-escrow/:escrowId', async (req, res) => {
+  const viewer = await guardEscrow(req, res, req.params.escrowId)
+  if (!viewer) return
   const task = await prisma.task.findUnique({ where: { escrowId: req.params.escrowId } })
   if (!task) return res.status(404).json({ error: 'No task linked to this escrow' })
   res.json(task)
 })
 
 tasksRouter.get('/:id', async (req, res) => {
-  const task = await prisma.task.findUnique({ where: { id: req.params.id } }).catch(() => null)
+  const viewer = await requireViewer(req, res)
+  if (!viewer) return
+  if (!UUID_REGEX.test(req.params.id)) return res.status(404).json({ error: 'Task not found' })
+  const task = await prisma.task.findUnique({ where: { id: req.params.id } })
   if (!task) return res.status(404).json({ error: 'Task not found' })
+  if (!(await canViewParties(viewer, { buyer: task.buyer, seller: task.seller }))) {
+    return res.status(403).json({ error: 'This task is private — only its buyer, seller and the arbiter can see it.' })
+  }
   res.json(task)
 })
