@@ -125,7 +125,7 @@ const BUILDING_BLOCKS: { title: string; description: string; Icon: () => JSX.Ele
   },
   {
     title: 'Open escrow contract',
-    description: 'AgentEco.sol is deployed on BOT Chain — read it, call it, verify it yourself.',
+    description: 'AgentEco.sol is deployed on BNB Smart Chain — read it, call it, verify it yourself.',
     Icon: ContractIcon,
   },
   {

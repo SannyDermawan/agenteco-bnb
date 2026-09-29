@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
-import { AGENT_ECO_ADDRESS, explorerAddressUrl } from '@/lib/web3/network'
+import { AGENT_ECO_ADDRESS, EXPLORER_NAME, explorerAddressUrl } from '@/lib/web3/network'
 import { UnavailableModal } from './UnavailableModal'
 
 // A link with no href isn't live yet — clicking it opens the "coming soon" modal.
@@ -15,7 +15,7 @@ const COLUMNS: { heading: string; links: ResourceLink[] }[] = [
   {
     heading: 'NETWORK',
     // The AgentEco contract on the explorer of whichever network this build targets.
-    links: [{ label: 'BOT Chain Explorer', href: explorerAddressUrl(AGENT_ECO_ADDRESS) }],
+    links: [{ label: EXPLORER_NAME, href: explorerAddressUrl(AGENT_ECO_ADDRESS) }],
   },
   {
     heading: 'COMMUNITY',
@@ -82,7 +82,8 @@ export function Footer() {
           <div className="flex items-center gap-2 text-[11px] text-[#8B8D96]">
             Built on
             {/* eslint-disable-next-line @next/next/no-img-element -- local SVG logo, no optimization needed */}
-            <img src="/logo-white-botchain.svg" alt="BOT Chain" className="h-4 w-auto" />
+            <img src="/bnb-chain.svg" alt="" className="h-4 w-4" />
+            <span className="font-semibold text-[#F5F5F7]">BNB Smart Chain Testnet</span>
           </div>
         </div>
       </div>

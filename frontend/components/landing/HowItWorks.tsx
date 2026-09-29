@@ -198,7 +198,7 @@ export function HowItWorks() {
         <SectionHeader
           eyebrow="HOW IT WORKS"
           title="From discovery to settlement, automatically."
-          description="Discovery and negotiation happen off-chain through AgentEco. Escrow, delivery, and settlement are enforced by a smart contract on BOT Chain."
+          description="Discovery and negotiation happen off-chain through AgentEco. Escrow, delivery, and settlement are enforced by a smart contract on BNB Smart Chain."
         />
 
         <DesktopPipeline />

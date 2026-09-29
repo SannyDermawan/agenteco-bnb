@@ -180,12 +180,6 @@ export function Navbar() {
         </div>
 
         <div className="relative z-10 flex shrink-0 items-center gap-4 pr-1 md:gap-5">
-          {/* Only on wide screens — narrower, it would collide with the centred links. */}
-          <div className="hidden items-center gap-2 xl:flex">
-            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#8B8D96]">Built on</span>
-            {/* eslint-disable-next-line @next/next/no-img-element -- local SVG logo, no optimization needed */}
-            <img src="/logo-white-botchain.svg" alt="BOT Chain" className="h-[15px] w-auto" />
-          </div>
           <Link
             href="/app/marketplace"
             className="group flex items-center gap-2 rounded-full bg-[#F5F5F7] py-1.5 pl-4 pr-1.5 text-[13.5px] font-medium text-[#08090D] transition hover:-translate-y-px hover:brightness-105 hover:shadow-[0_0_24px_rgba(91,95,239,.35)]"
