@@ -6,11 +6,12 @@ import { ActivityTimeline } from '@/components/app/ActivityTimeline'
 import { PageFade } from '@/components/app/PageFade'
 import { GetTestTokensCard } from '@/components/app/GetTestTokensCard'
 import { useOverview } from '@/lib/useOverview'
+import { SessionGate } from '@/components/app/SessionGate'
 import { useReputation } from '@/lib/web3/hooks'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 export default function DashboardPage() {
-  const { isConnected, agents, orderRows, loading, error, settledCount, activeOrders, totalVolumeSettled, activityEntries } =
+  const { signedIn, agents, orderRows, loading, error, settledCount, activeOrders, totalVolumeSettled, activityEntries } =
     useOverview()
 
   const sellerAgent = agents.find((a) => a.role === 'seller' && a.walletAddress)
@@ -28,10 +29,8 @@ export default function DashboardPage() {
 
         <GetTestTokensCard />
 
-        {!isConnected ? (
-          <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">
-            Connect your wallet from the top bar to see your dashboard.
-          </NeumorphicCard>
+        {!signedIn ? (
+          <SessionGate what="your dashboard">{null}</SessionGate>
         ) : error ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#EF4444]">{error}</NeumorphicCard>
         ) : loading ? (

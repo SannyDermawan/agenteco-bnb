@@ -131,7 +131,7 @@ export default function CreateAgentPage() {
         <NeumorphicCard className="p-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <Field label="Agent Name">
-              <input required name="name" type="text" placeholder={role === 'seller' ? 'e.g. Translator Pro' : 'e.g. Weekly Market Brief'} className={FIELD_CLASS} />
+              <input required name="name" type="text" maxLength={100} placeholder={role === 'seller' ? 'e.g. Translator Pro' : 'e.g. Weekly Market Brief'} className={FIELD_CLASS} />
             </Field>
 
             <Field label="Role">

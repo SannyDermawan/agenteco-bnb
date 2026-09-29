@@ -7,6 +7,7 @@ import { wagmiConfig } from '@/lib/web3/config'
 import { AppSidebar } from '@/components/app/AppSidebar'
 import { AppTopbar } from '@/components/app/AppTopbar'
 import { DemoModeBanner } from '@/components/app/DemoModeBanner'
+import { SessionSync } from '@/components/app/SessionGate'
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -15,6 +16,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
+        <SessionSync />
         <div className="min-h-screen bg-[#08090D] text-[#F5F5F7]">
           <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
           <div className="lg:pl-[248px]">

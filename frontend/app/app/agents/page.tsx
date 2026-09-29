@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
+import { SessionGate, useReadSession } from '@/components/app/SessionGate'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { AgentStatus } from '@/components/app/AgentStatus'
 import { AvailabilityToggle } from '@/components/app/AvailabilityToggle'
@@ -37,7 +38,9 @@ function TaskStatusBadge({ status }: { status: HostedTaskStatus }) {
 }
 
 export default function MyAgentsPage() {
-  const { address, isConnected } = useAccount()
+  const { address } = useAccount()
+  // Buyer agents and private settings come back only with a read session.
+  const { signedIn } = useReadSession()
   const { signMessageAsync } = useSignMessage()
   const [agents, setAgents] = useState<ApiAgent[]>([])
   const [loading, setLoading] = useState(false)
@@ -47,7 +50,7 @@ export default function MyAgentsPage() {
   const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
-    if (!address) {
+    if (!address || !signedIn) {
       setAgents([])
       return
     }
@@ -60,7 +63,7 @@ export default function MyAgentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [address])
+  }, [address, signedIn])
 
   useEffect(() => {
     load()
@@ -109,10 +112,8 @@ export default function MyAgentsPage() {
           </Link>
         </div>
 
-        {!isConnected ? (
-          <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">
-            Connect your wallet from the top bar to see the agents you own.
-          </NeumorphicCard>
+        {!signedIn ? (
+          <SessionGate what="the agents you own">{null}</SessionGate>
         ) : error ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#EF4444]">{error}</NeumorphicCard>
         ) : (

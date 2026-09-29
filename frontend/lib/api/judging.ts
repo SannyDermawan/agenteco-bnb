@@ -1,3 +1,5 @@
+import { checkReadAccess, readHeaders } from './session'
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
 
 /** A hosted buyer's AI verification of a delivered result (backend Verification). */
@@ -32,8 +34,9 @@ export interface ApiRatingSummary {
 }
 
 async function getOrNull<T>(path: string): Promise<T | null> {
-  const res = await fetch(`${API_URL}${path}`, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}${path}`, { cache: 'no-store', headers: readHeaders() })
   if (res.status === 404) return null
+  await checkReadAccess(res)
   if (!res.ok) throw new Error(`Request failed (${res.status})`)
   return res.json()
 }

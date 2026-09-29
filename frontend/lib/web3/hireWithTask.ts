@@ -6,7 +6,7 @@ import { EXECUTION_WINDOW_SECONDS, REVIEW_WINDOW_SECONDS } from './constants'
 import { parseCreatedEscrowId } from './hooks'
 import { assertUsdtBalance } from './usdtBalance'
 import { TOKEN_SYMBOL } from './network'
-import { createTask, linkTaskEscrow, type ApiTask } from '@/lib/api/tasks'
+import { createTask, linkTaskEscrow, type ApiTask, type TaskLinkReceipt } from '@/lib/api/tasks'
 import type { WalletSigner } from '@/lib/api/authHeaders'
 
 export type HireStep =
@@ -104,7 +104,7 @@ export async function hireWithTask(input: HireInput): Promise<{ escrowId: bigint
   // The seller starts only once it can read the brief — retry a flaky link a
   // few times rather than leave a funded escrow for the accept timeout.
   onStep('linking')
-  let linked: ApiTask | null = null
+  let linked: TaskLinkReceipt | null = null
   for (let attempt = 0; attempt < 3 && !linked; attempt++) {
     try {
       linked = await linkTaskEscrow(task.id, escrowId.toString())
@@ -113,5 +113,5 @@ export async function hireWithTask(input: HireInput): Promise<{ escrowId: bigint
       await new Promise((r) => setTimeout(r, 2000))
     }
   }
-  return { escrowId, task: linked! }
+  return { escrowId, task: { ...task, ...linked! } }
 }

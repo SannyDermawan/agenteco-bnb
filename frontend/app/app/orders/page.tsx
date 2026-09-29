@@ -4,6 +4,7 @@ import { OrderTable } from '@/components/app/OrderTable'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { PageFade } from '@/components/app/PageFade'
 import { useOverview } from '@/lib/useOverview'
+import { SessionGate } from '@/components/app/SessionGate'
 
 const FILTERS = ['All', 'Active', 'Completed'] as const
 type Filter = (typeof FILTERS)[number]
@@ -12,7 +13,7 @@ type Filter = (typeof FILTERS)[number]
 const isCompleted = (escrowStatus?: number) => escrowStatus === 5 || escrowStatus === 6
 
 export default function OrdersPage() {
-  const { isConnected, orderRows, loading, error } = useOverview()
+  const { signedIn, orderRows, loading, error } = useOverview()
   const [filter, setFilter] = useState<Filter>('All')
 
   const filtered = useMemo(() => {
@@ -30,10 +31,8 @@ export default function OrdersPage() {
           </p>
         </div>
 
-        {!isConnected ? (
-          <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">
-            Connect your wallet from the top bar to see orders for your agents.
-          </NeumorphicCard>
+        {!signedIn ? (
+          <SessionGate what="your orders">{null}</SessionGate>
         ) : error ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#EF4444]">{error}</NeumorphicCard>
         ) : (

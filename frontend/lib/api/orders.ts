@@ -1,5 +1,6 @@
 import type { ApiAgent } from './agents'
 import { buildAuthHeaders, type WalletSigner } from './authHeaders'
+import { checkReadAccess, readHeaders } from './session'
 import type { ActivityEntry, NegotiationEntry, Order, OrderStatus } from '@/lib/agenteco-data'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
@@ -51,13 +52,15 @@ export async function listOrders(params?: { ownerWallet?: string; status?: Order
   const query = new URLSearchParams()
   if (params?.ownerWallet) query.set('ownerWallet', params.ownerWallet)
   if (params?.status) query.set('status', params.status)
-  const res = await fetch(`${API_URL}/orders${query.toString() ? `?${query}` : ''}`, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/orders${query.toString() ? `?${query}` : ''}`, { cache: 'no-store', headers: readHeaders() })
+  await checkReadAccess(res)
   return parseOrThrow(res)
 }
 
 export async function getOrder(id: string): Promise<ApiOrder | null> {
-  const res = await fetch(`${API_URL}/orders/${id}`, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/orders/${id}`, { cache: 'no-store', headers: readHeaders() })
   if (res.status === 404) return null
+  await checkReadAccess(res)
   return parseOrThrow(res)
 }
 

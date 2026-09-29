@@ -1,4 +1,5 @@
 import { buildAuthHeaders, type WalletSigner } from './authHeaders'
+import { checkReadAccess, readHeaders } from './session'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
 
@@ -48,8 +49,11 @@ export async function createTask(
   return parseOrThrow(res)
 }
 
+/** What linking returns — never the brief (the caller already has it). */
+export type TaskLinkReceipt = Pick<ApiTask, 'id' | 'escrowId' | 'taskHash' | 'verified'>
+
 /** Step 3, after funding: the API checks the escrow on-chain before linking — no signature needed. */
-export async function linkTaskEscrow(taskId: string, escrowId: string): Promise<ApiTask> {
+export async function linkTaskEscrow(taskId: string, escrowId: string): Promise<TaskLinkReceipt> {
   const res = await fetch(`${API_URL}/tasks/${taskId}/escrow`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -59,7 +63,8 @@ export async function linkTaskEscrow(taskId: string, escrowId: string): Promise<
 }
 
 export async function getTaskByEscrow(escrowId: string): Promise<ApiTask | null> {
-  const res = await fetch(`${API_URL}/tasks/by-escrow/${escrowId}`, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/tasks/by-escrow/${escrowId}`, { cache: 'no-store', headers: readHeaders() })
   if (res.status === 404) return null
+  await checkReadAccess(res)
   return parseOrThrow(res)
 }

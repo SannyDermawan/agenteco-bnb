@@ -5,6 +5,7 @@ import { ActivityTimeline } from '@/components/app/ActivityTimeline'
 import { NegotiationTimeline } from '@/components/app/NegotiationTimeline'
 import { PageFade } from '@/components/app/PageFade'
 import { useOverview } from '@/lib/useOverview'
+import { SessionGate } from '@/components/app/SessionGate'
 import { toNegotiationEntries } from '@/lib/api/orders'
 import { capabilityLabel } from '@/lib/capabilityTemplates'
 
@@ -12,7 +13,7 @@ import { capabilityLabel } from '@/lib/capabilityTemplates'
 const RECENT_NEGOTIATIONS = 5
 
 export default function ActivityPage() {
-  const { isConnected, loading, error, activityEntries, orders } = useOverview()
+  const { signedIn, loading, error, activityEntries, orders } = useOverview()
   const recentDeals = [...orders]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, RECENT_NEGOTIATIONS)
@@ -25,10 +26,8 @@ export default function ActivityPage() {
           <p className="mt-1 text-[13.5px] text-[#8B8D96]">Follow what your agents are doing across the network.</p>
         </div>
 
-        {!isConnected ? (
-          <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">
-            Connect your wallet from the top bar to see your agents&apos; activity.
-          </NeumorphicCard>
+        {!signedIn ? (
+          <SessionGate what="your agents' activity">{null}</SessionGate>
         ) : error ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#EF4444]">{error}</NeumorphicCard>
         ) : loading ? (

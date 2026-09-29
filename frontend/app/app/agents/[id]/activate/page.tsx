@@ -5,8 +5,18 @@ import { PageFade } from '@/components/app/PageFade'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { ActivateAgentCard } from '@/components/app/ActivateAgentCard'
 import { getAgent, type ApiAgent } from '@/lib/api/agents'
+import { SessionGate } from '@/components/app/SessionGate'
 
+// A hosted agent (and its deposit address) is visible to its owner only.
 export default function ActivateAgentPage() {
+  return (
+    <SessionGate what="this agent">
+      <ActivateAgentContent />
+    </SessionGate>
+  )
+}
+
+function ActivateAgentContent() {
   const params = useParams<{ id: string }>()
   const [agent, setAgent] = useState<ApiAgent | null>(null)
   const [loading, setLoading] = useState(true)

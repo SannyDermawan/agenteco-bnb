@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatUnits } from 'viem'
 import { useAccount } from 'wagmi'
+import { useReadSession } from '@/components/app/SessionGate'
 import { listAgents, type ApiAgent } from './api/agents'
 import { listOrders, buildActivityEntries, toOrderRow, type ApiOrder } from './api/orders'
 import { useEscrowStatuses, useEscrowTimestampsMulti, useUsdtDecimals } from './web3/hooks'
@@ -29,6 +30,8 @@ type OrderRowWithMeta = Order & { sortAt: number; escrowId?: bigint }
  */
 export function useOverview() {
   const { address, isConnected } = useAccount()
+  // Orders are private: nothing is fetched until the wallet has signed in (SessionGate).
+  const { signedIn } = useReadSession()
   const [agents, setAgents] = useState<ApiAgent[]>([])
   const [allAgents, setAllAgents] = useState<ApiAgent[]>([])
   const [orders, setOrders] = useState<ApiOrder[]>([])
@@ -37,7 +40,7 @@ export function useOverview() {
   const { data: decimals } = useUsdtDecimals()
 
   useEffect(() => {
-    if (!address) {
+    if (!address || !signedIn) {
       setAgents([])
       setOrders([])
       return
@@ -52,7 +55,7 @@ export function useOverview() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Could not load dashboard data.'))
       .finally(() => setLoading(false))
-  }, [address])
+  }, [address, signedIn])
 
   // Direct hires: escrows where the connected wallet is the buyer, or the
   // connected wallet / one of its agents' wallets is the seller.
@@ -165,6 +168,7 @@ export function useOverview() {
 
   return {
     isConnected,
+    signedIn,
     agents,
     orders,
     orderRows,

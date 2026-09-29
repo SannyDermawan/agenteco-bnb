@@ -1,5 +1,6 @@
 import type { AgentSummary } from '@/lib/agenteco-data'
 import { buildAuthHeaders, type WalletSigner } from './authHeaders'
+import { dropReadSession, readHeaders } from './session'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
 
@@ -94,14 +95,27 @@ export async function listAgents(params?: {
   if (params?.ownerWallet) query.set('ownerWallet', params.ownerWallet)
   if (params?.capability) query.set('capability', params.capability)
   if (params?.q) query.set('q', params.q)
-  const res = await fetch(`${API_URL}/agents${query.toString() ? `?${query}` : ''}`, { cache: 'no-store' })
-  return parseOrThrow(res)
+  // Signed in: the wallet's own agents come back in full (buyers included); otherwise public profiles.
+  return parseOrThrow(await fetchWithSession(`${API_URL}/agents${query.toString() ? `?${query}` : ''}`))
 }
 
 export async function getAgent(id: string): Promise<ApiAgent | null> {
-  const res = await fetch(`${API_URL}/agents/${id}`, { cache: 'no-store' })
+  const res = await fetchWithSession(`${API_URL}/agents/${id}`)
   if (res.status === 404) return null
   return parseOrThrow(res)
+}
+
+/**
+ * Agent profiles are public, so a session the API refuses (expired, or
+ * signed on another domain) is dropped — the sign-in prompt comes back where
+ * one is needed — and the read is retried anonymously.
+ */
+async function fetchWithSession(url: string): Promise<Response> {
+  const headers = readHeaders()
+  const res = await fetch(url, { cache: 'no-store', headers })
+  if (res.status !== 401 || Object.keys(headers).length === 0) return res
+  dropReadSession()
+  return fetch(url, { cache: 'no-store' })
 }
 
 /**

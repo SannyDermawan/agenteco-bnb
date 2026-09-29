@@ -5,6 +5,7 @@ import { formatUnits } from 'viem'
 import { useAccount } from 'wagmi'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { PageFade } from '@/components/app/PageFade'
+import { SessionGate, useReadSession } from '@/components/app/SessionGate'
 import { ArrowRightIcon } from '@/components/app/icons'
 import { listDisputeReasons, type ApiDispute } from '@/lib/api/disputes'
 import { ArbiterDecision } from '@/components/app/ArbiterDecision'
@@ -156,14 +157,16 @@ function DisputeRow({ d, record, decimals }: { d: DisputeSummary; record?: ApiDi
 /** The arbiter's inbox: every dispute on the contract, open ones (longest waiting) first. */
 export default function DisputesPage() {
   const { address, isConnected } = useAccount()
+  const { signedIn } = useReadSession()
   const { data: arbiter } = useArbiter()
   const isArbiter = useIsArbiter(address)
   const { data: disputes, isPending } = useDisputes(isArbiter)
   const { data: decimals } = useUsdtDecimals()
+  // The dispute texts are private: the API lists them only to the signed-in arbiter.
   const { data: reasons } = useQuery({
-    queryKey: ['disputeReasons'],
+    queryKey: ['disputeReasons', address],
     queryFn: listDisputeReasons,
-    enabled: isArbiter,
+    enabled: isArbiter && signedIn,
     refetchInterval: 5_000,
   })
   const recordByEscrow = new Map((reasons ?? []).map((r) => [r.escrowId, r]))
@@ -197,6 +200,8 @@ export default function DisputesPage() {
             )}
             .
           </NeumorphicCard>
+        ) : !signedIn ? (
+          <SessionGate what="the disputes">{null}</SessionGate>
         ) : isPending ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">Reading disputes from the chain…</NeumorphicCard>
         ) : (

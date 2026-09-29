@@ -17,6 +17,9 @@ import { PageFade } from '@/components/app/PageFade'
 import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
 import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { getOrder, toNegotiationEntries, toOrderRow } from '@/lib/api/orders'
+import { PrivateOrderError } from '@/lib/api/session'
+import { PrivateOrderNotice, SessionGate } from '@/components/app/SessionGate'
+import { useAccount } from 'wagmi'
 import { useEscrowBasic, useEscrowTimestamps, useReputation, useUsdtDecimals } from '@/lib/web3/hooks'
 import { useEscrowTxHashes } from '@/lib/web3/escrowEvents'
 
@@ -157,18 +160,37 @@ function LiveEscrowSidebar({ escrowId }: { escrowId: bigint }) {
 
 const ORDER_POLL_MS = 4000
 
+// Private to the order's buyer, seller and the arbiter.
 export default function OrderDetailPage() {
+  return (
+    <SessionGate what="this order">
+      <OrderDetail />
+    </SessionGate>
+  )
+}
+
+function OrderDetail() {
   const params = useParams<{ id: string }>()
+  const { address } = useAccount()
 
   // A hosted buyer funds the deal on its own, so poll until the order has an
   // escrow — from then on LiveEscrowMain polls the chain for the rest.
   const orderQuery = useQuery({
-    queryKey: ['order', params.id],
+    queryKey: ['order', params.id, address],
     queryFn: () => getOrder(params.id),
-    refetchInterval: (query) => (query.state.data?.escrowId ? false : ORDER_POLL_MS),
+    refetchInterval: (query) => (query.state.data?.escrowId || query.state.error ? false : ORDER_POLL_MS),
+    retry: (count, err) => !(err instanceof PrivateOrderError) && count < 3,
   })
   const apiOrder = orderQuery.data ?? null
   const error = orderQuery.error ? orderQuery.error.message || 'Could not load this order.' : null
+
+  if (orderQuery.error instanceof PrivateOrderError) {
+    return (
+      <PageFade>
+        <PrivateOrderNotice />
+      </PageFade>
+    )
+  }
 
   if (orderQuery.isPending) {
     return (

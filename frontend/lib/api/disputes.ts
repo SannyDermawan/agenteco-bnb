@@ -1,4 +1,5 @@
 import { buildAuthHeaders, type WalletSigner } from './authHeaders'
+import { checkReadAccess, readHeaders } from './session'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
 
@@ -44,13 +45,16 @@ async function parseOrThrow<T>(res: Response): Promise<T> {
 }
 
 export async function getDisputeReason(escrowId: string): Promise<ApiDispute | null> {
-  const res = await fetch(`${API_URL}/disputes/${escrowId}`, { cache: 'no-store' })
+  const res = await fetch(`${API_URL}/disputes/${escrowId}`, { cache: 'no-store', headers: readHeaders() })
   if (res.status === 404) return null
+  await checkReadAccess(res)
   return parseOrThrow(res)
 }
 
 export async function listDisputeReasons(): Promise<ApiDispute[]> {
-  return parseOrThrow(await fetch(`${API_URL}/disputes`, { cache: 'no-store' }))
+  const res = await fetch(`${API_URL}/disputes`, { cache: 'no-store', headers: readHeaders() })
+  await checkReadAccess(res)
+  return parseOrThrow(res)
 }
 
 /** The buyer's side of the story for the arbiter — signed, since only the escrow's buyer may write it. */

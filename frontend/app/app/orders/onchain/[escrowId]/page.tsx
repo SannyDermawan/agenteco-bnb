@@ -8,6 +8,8 @@ import { EscrowActionPanel } from '@/components/app/EscrowActionPanel'
 import { EscrowReviewCards } from '@/components/app/EscrowReviewCards'
 import { DeadlineCountdown } from '@/components/app/DeadlineCountdown'
 import { PageFade } from '@/components/app/PageFade'
+import { SessionGate } from '@/components/app/SessionGate'
+import { EscrowAccessGate } from '@/components/app/EscrowAccessGate'
 import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
 import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { useEscrowBasic, useEscrowTimestamps, useReputation, useUsdtDecimals } from '@/lib/web3/hooks'
@@ -17,9 +19,19 @@ function truncateAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
+// Private to the escrow's buyer, seller and the arbiter.
 export default function OnChainOrderPage({ params }: { params: Promise<{ escrowId: string }> }) {
-  const { escrowId: escrowIdParam } = use(params)
+  const { escrowId } = use(params)
+  return (
+    <SessionGate what="this order">
+      <EscrowAccessGate escrowId={escrowId}>
+        <OnChainOrder escrowIdParam={escrowId} />
+      </EscrowAccessGate>
+    </SessionGate>
+  )
+}
 
+function OnChainOrder({ escrowIdParam }: { escrowIdParam: string }) {
   let escrowId: bigint | null
   try {
     escrowId = BigInt(escrowIdParam)
