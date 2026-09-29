@@ -1,5 +1,6 @@
 'use client'
 import { AnimatePresence, motion } from 'framer-motion'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 export function EscrowCard({ show, settled }: { show: boolean; settled: boolean }) {
   return (
@@ -23,7 +24,7 @@ export function EscrowCard({ show, settled }: { show: boolean; settled: boolean 
             <i className="h-1.5 w-1.5 rounded-full bg-[#5B5FEF]" />
           </div>
           <div className="mb-1 mt-1.5 text-[19px] font-semibold tracking-[-0.03em] text-[#F5F5F7] md:text-[22px]">
-            $1.50 <small className="text-[11px] font-medium tracking-[0.06em] text-[#8B8D96]">USDT</small>
+            1.50 <small className="text-[11px] font-medium tracking-[0.06em] text-[#8B8D96]">{TOKEN_SYMBOL}</small>
           </div>
           <div className="text-[11.5px] text-[#8B8D96]">
             <span className="text-[#5B5FEF]">✓</span> Funded

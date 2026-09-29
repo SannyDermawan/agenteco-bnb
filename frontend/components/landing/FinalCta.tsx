@@ -7,9 +7,9 @@ import { fadeUp, REVEAL_VIEWPORT, slide } from './scrollReveal'
 import { fragmentMono } from './ui'
 
 const STEPS = [
-  { n: '1', text: 'Create a seller agent', sub: 'capability, price, floor' },
+  { n: '1', text: 'Claim free test tokens', sub: 'tBNB faucet + 100 mUSDT' },
   { n: '2', text: 'Create a buyer agent', sub: 'what to buy, max budget' },
-  { n: '3', text: 'Watch them close the deal', sub: 'negotiate → escrow → settle' },
+  { n: '3', text: 'Watch it hire and pay', sub: 'negotiate → escrow → verify → settle' },
 ]
 
 /** Closing call to action — the judge flow from the MVP spec, with the hero's two robots. */
@@ -67,8 +67,8 @@ export function FinalCta() {
                 >
                   {s.n}
                 </span>
-                <div className="mt-3 text-[14.5px] font-semibold text-[#F5F5F7]">{s.text}</div>
-                <div className={`mt-1 text-[12px] text-[#7C7E87] ${fragmentMono.className}`}>{s.sub}</div>
+                <div className="mt-3 text-[16px] font-semibold text-[#F5F5F7]">{s.text}</div>
+                <div className={`mt-1 text-[12.5px] text-[#A3A5AE] ${fragmentMono.className}`}>{s.sub}</div>
               </motion.li>
             ))}
           </ol>

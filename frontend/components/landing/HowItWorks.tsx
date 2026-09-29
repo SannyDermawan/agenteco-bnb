@@ -23,35 +23,35 @@ const STAGES: Stage[] = [
   {
     number: '01',
     title: 'Discover',
-    description: 'The buyer agent finds online sellers for its capability and filters them by price and reputation.',
+    description: 'Your buyer agent finds online sellers for the job, within your budget.',
     where: 'OFF-CHAIN',
     accent: BLUE,
   },
   {
     number: '02',
     title: 'Negotiate',
-    description: "Offers and counters go back and forth within the seller's floor and the buyer's budget.",
+    description: 'The two agents trade offers — neither ever sees the other’s limit.',
     where: 'OFF-CHAIN',
     accent: BLUE,
   },
   {
     number: '03',
     title: 'Escrow',
-    description: 'The agreed price is locked in the AgentEco.sol contract before any work starts.',
+    description: 'The agreed price is locked in AgentEco.sol before any work starts.',
     where: 'ON-CHAIN',
     accent: BLUE,
   },
   {
     number: '04',
-    title: 'Execute',
-    description: 'The seller agent runs the task and commits the result’s hash on-chain.',
+    title: 'Deliver & verify',
+    description: 'The seller’s AI does the job; the buyer’s AI scores the result.',
     where: 'ON-CHAIN',
     accent: VIOLET,
   },
   {
     number: '05',
     title: 'Settle',
-    description: 'The buyer accepts, USDT goes to the seller, and both reputations update.',
+    description: 'A good score pays and rates the seller. Too low, and a dispute opens.',
     where: 'ON-CHAIN',
     accent: GREEN,
   },
@@ -60,7 +60,7 @@ const STAGES: Stage[] = [
 function NumberBadge({ stage, active }: { stage: Stage; active: boolean }) {
   return (
     <div
-      className="relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-[#08090D] text-[13px] font-semibold tracking-[-0.01em] transition-colors duration-300"
+      className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-[#08090D] text-[14px] font-semibold tracking-[-0.01em] transition-colors duration-300"
       style={{
         borderColor: active ? `${stage.accent}80` : 'rgba(255,255,255,0.14)',
         color: active ? stage.accent : '#A3A5AE',
@@ -76,13 +76,13 @@ function StageText({ stage, centered }: { stage: Stage; centered: boolean }) {
   return (
     <div className={centered ? 'text-center' : ''}>
       <div
-        className={`text-[10.5px] tracking-[0.14em] ${fragmentMono.className}`}
+        className={`text-[11.5px] tracking-[0.14em] ${fragmentMono.className}`}
         style={{ color: stage.where === 'ON-CHAIN' ? GREEN : '#7C7E87' }}
       >
         {stage.where}
       </div>
-      <h3 className="mt-1.5 text-[16px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{stage.title}</h3>
-      <p className={`mt-1.5 text-[13px] leading-relaxed text-[#A3A5AE] ${centered ? 'mx-auto max-w-[24ch]' : ''}`}>
+      <h3 className="mt-2 text-[19px] font-semibold tracking-[-0.015em] text-[#F5F5F7]">{stage.title}</h3>
+      <p className={`mt-2 text-[15px] leading-relaxed text-[#A3A5AE] ${centered ? 'mx-auto max-w-[22ch]' : ''}`}>
         {stage.description}
       </p>
     </div>
@@ -117,22 +117,22 @@ function DesktopPipeline() {
 
   return (
     <div ref={pipelineRef} className="relative mt-16 hidden md:block">
-      <div aria-hidden className="pointer-events-none absolute left-[10%] right-[10%] top-[22px] h-px bg-white/10" />
+      <div aria-hidden className="pointer-events-none absolute left-[10%] right-[10%] top-[24px] h-px bg-white/10" />
       {!reduceMotion ? (
         <motion.div aria-hidden className="pointer-events-none absolute inset-0" style={{ opacity: fillOpacity }}>
           <motion.div
-            className="absolute left-[10%] right-[10%] top-[22px] h-px origin-left"
+            className="absolute left-[10%] right-[10%] top-[24px] h-px origin-left"
             style={{ scaleX: progress, background: `linear-gradient(90deg, ${BLUE}, ${VIOLET} 60%, ${GREEN})` }}
           />
           <motion.div
-            className="absolute top-[22px] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            className="absolute top-[24px] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
             style={{ left: dotLeft, backgroundColor: dotColor, boxShadow: '0 0 10px currentColor' }}
           />
         </motion.div>
       ) : (
         <div
           aria-hidden
-          className="pointer-events-none absolute left-[10%] right-[10%] top-[22px] h-px"
+          className="pointer-events-none absolute left-[10%] right-[10%] top-[24px] h-px"
           style={{ background: `linear-gradient(90deg, ${BLUE}, ${VIOLET} 60%, ${GREEN})` }}
         />
       )}
@@ -197,8 +197,8 @@ export function HowItWorks() {
       <div className="relative mx-auto max-w-[1200px]">
         <SectionHeader
           eyebrow="HOW IT WORKS"
-          title="From discovery to settlement, automatically."
-          description="Discovery and negotiation happen off-chain through AgentEco. Escrow, delivery, and settlement are enforced by a smart contract on BNB Smart Chain."
+          title="From request to payment, automatically."
+          description="Finding a seller and agreeing on a price happen off-chain. The escrow, the result's hash and the payment are enforced by a smart contract on BNB Smart Chain."
         />
 
         <DesktopPipeline />

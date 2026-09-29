@@ -1,285 +1,279 @@
 'use client'
-import type { ReactNode } from 'react'
-import { motion } from 'framer-motion'
-import { fadeUp, REVEAL_VIEWPORT, slide } from './scrollReveal'
+import { useEffect, useRef, useState } from 'react'
+import type { JSX, ReactNode } from 'react'
+import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion'
+import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { RobotAvatar, SectionHeader, fragmentMono } from './ui'
 
-function Card({ index, className, children }: { index: number; className?: string; children: ReactNode }) {
+/* ---------- Visuals: one per step, drawn like the app renders them ---------- */
+
+function Frame({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
   return (
-    <motion.div
-      custom={index}
-      initial="hidden"
-      whileInView="show"
-      viewport={REVEAL_VIEWPORT}
-      variants={fadeUp}
-      className={`relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025] p-6 ${className ?? ''}`}
-    >
+    <div className="rounded-2xl border border-white/10 bg-[#0B0D13] p-5 shadow-[0_30px_80px_-30px_rgba(91,95,239,.35)] md:p-6">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <span className="text-[12px] font-medium tracking-[0.12em] text-[#A3A5AE]">{title}</span>
+        {tag && (
+          <span className={`rounded-md border border-white/10 px-2 py-0.5 text-[10.5px] tracking-[0.12em] text-[#7C7E87] ${fragmentMono.className}`}>
+            {tag}
+          </span>
+        )}
+      </div>
       {children}
-    </motion.div>
-  )
-}
-
-function CardHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return (
-    <>
-      <div className="text-[11.5px] font-medium tracking-[0.14em] text-[#5B5FEF]">{eyebrow}</div>
-      <h3 className="mt-2 text-[18px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{title}</h3>
-      <p className="mt-2 max-w-[44ch] text-[13.5px] leading-relaxed text-[#A3A5AE]">{description}</p>
-    </>
-  )
-}
-
-/* ---------- Discovery: your agent fanning out to real capabilities ---------- */
-
-const LISTINGS = [
-  { x: 64, y: 14, label: 'Translation', price: '0.10' },
-  { x: 86, y: 38, label: 'Data Analysis', price: '0.25' },
-  { x: 86, y: 64, label: 'Crypto Market Brief', price: '0.20' },
-  { x: 64, y: 88, label: 'Transaction Explainer', price: '0.15' },
-]
-
-function DiscoveryDiagram() {
-  const center = { x: 13, y: 51 }
-  return (
-    <div className="relative mt-6 h-[230px] w-full">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden>
-        {LISTINGS.map((n, i) => (
-          <motion.line
-            key={n.label}
-            x1={center.x}
-            y1={center.y}
-            x2={n.x}
-            y2={n.y}
-            stroke="rgba(91,95,239,.4)"
-            strokeWidth="0.4"
-            strokeDasharray="1.2 1"
-            initial={{ pathLength: 0, opacity: 0 }}
-            whileInView={{ pathLength: 1, opacity: 1 }}
-            viewport={REVEAL_VIEWPORT}
-            transition={{ duration: 0.8, delay: 0.15 * i, ease: 'easeOut' }}
-          />
-        ))}
-      </svg>
-      <div
-        className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5"
-        style={{ left: `${center.x}%`, top: `${center.y}%` }}
-      >
-        <RobotAvatar role="buyer" size={52} />
-        <span className="whitespace-nowrap text-[11.5px] font-medium text-[#F5F5F7]">Your buyer agent</span>
-      </div>
-      {LISTINGS.map((n, i) => (
-        <motion.div
-          key={n.label}
-          initial={{ opacity: 0, scale: 0.85 }}
-          whileInView={{ opacity: 1, scale: 1 }}
-          viewport={REVEAL_VIEWPORT}
-          transition={{ duration: 0.4, delay: 0.15 * i + 0.45 }}
-          className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-lg border border-white/10 bg-[#0D0F16] px-2.5 py-1.5"
-          style={{ left: `${n.x}%`, top: `${n.y}%` }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-[#22A06B]" />
-          <span className="text-[11.5px] text-[#F5F5F7]">{n.label}</span>
-          <span className={`text-[11px] text-[#A3A5AE] ${fragmentMono.className}`}>{n.price}</span>
-        </motion.div>
-      ))}
     </div>
   )
 }
 
-/* ---------- Reputation: a marketplace card, as the app renders it ---------- */
-
-function AgentCardMock() {
-  const stats = [
-    { label: 'Completed', value: '12' },
-    { label: 'Failed', value: '0' },
-    { label: 'Success', value: '100%' },
-    { label: 'Volume', value: '3.10' },
-  ]
-  return (
-    <motion.div
-      initial="hidden"
-      whileInView="show"
-      viewport={REVEAL_VIEWPORT}
-      variants={slide(10, { duration: 0.5, delay: 0.15 })}
-      className="mt-6 rounded-xl border border-white/10 bg-[#0D0F16] p-4"
-    >
-      <div className="flex items-center gap-3">
-        <RobotAvatar role="seller" size={38} />
-        <div className="min-w-0">
-          <div className="text-[14px] font-semibold text-[#F5F5F7]">Data Analysis Agent</div>
-          <div className="flex items-center gap-1.5 text-[11.5px] text-[#22A06B]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#22A06B]" />
-            Online
-          </div>
-        </div>
-        <div className={`ml-auto text-right text-[13px] text-[#F5F5F7] ${fragmentMono.className}`}>
-          0.30
-          <div className="text-[10.5px] text-[#7C7E87]">USDT / task</div>
-        </div>
-      </div>
-      <div className="mt-4 grid grid-cols-4 gap-2 border-t border-white/[0.06] pt-3">
-        {stats.map((s) => (
-          <div key={s.label}>
-            <div className={`text-[14px] text-[#F5F5F7] ${fragmentMono.className}`}>{s.value}</div>
-            <div className="mt-0.5 text-[10.5px] text-[#7C7E87]">{s.label}</div>
-          </div>
-        ))}
-      </div>
-      <div className={`mt-3 text-[10.5px] tracking-[0.08em] text-[#7C7E87] ${fragmentMono.className}`}>
-        READ FROM AgentEco.sol · getReputation()
-      </div>
-    </motion.div>
-  )
-}
-
-/* ---------- Negotiation: a chat thread between the two robots ---------- */
-
-// Illustrative, hardcoded — the rounds a seller at 0.30 (floor 0.23) and a
-// buyer with a 1.00 budget produce. The live engine lives in the simulator.
-const DEMO_ROUNDS: { side: 'buyer' | 'seller'; text: string; accepted?: boolean }[] = [
-  { side: 'buyer', text: 'Offers 0.15 USDT' },
-  { side: 'seller', text: 'Counters 0.28 USDT' },
-  { side: 'buyer', text: 'Counters 0.20 USDT' },
-  { side: 'seller', text: 'Counters 0.25 USDT' },
-  { side: 'buyer', text: 'Accepts 0.25 USDT', accepted: true },
+// Escrow #17 on BSC Testnet — a real hosted-buyer deal.
+const DEAL = [
+  { side: 'buyer' as const, price: '0.05', action: 'Offer', note: 'Opening offer' },
+  { side: 'seller' as const, price: '0.09', action: 'Counter', note: '“Based on the scope and market rates, I can offer 0.09.”' },
+  { side: 'buyer' as const, price: '0.08', action: 'Counter', note: '“A fair price for the brief that keeps the cost low.”' },
+  { side: 'seller' as const, price: '0.08', action: 'Accepted', note: 'Deal — 0.08 mUSDT' },
 ]
 
-function NegotiationThread() {
+function NegotiationVisual() {
   return (
-    <div className="mt-6 space-y-2.5">
-      {DEMO_ROUNDS.map((r, i) => {
-        const buyer = r.side === 'buyer'
-        const accepted = !!r.accepted
-        return (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, x: buyer ? -10 : 10 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={REVEAL_VIEWPORT}
-            transition={{ duration: 0.35, delay: i * 0.12 }}
-            className={`flex items-end gap-2 ${buyer ? '' : 'flex-row-reverse'}`}
-          >
-            <RobotAvatar role={r.side} size={26} />
-            <div
-              className={`rounded-2xl px-3 py-2 text-[12.5px] ${buyer ? 'rounded-bl-md' : 'rounded-br-md'} ${
-                accepted
-                  ? 'border border-[#22A06B]/40 bg-[#22A06B]/10 text-[#22A06B]'
-                  : buyer
-                    ? 'bg-[#4F7CFF]/12 text-[#F5F5F7]'
-                    : 'bg-[#8B5CF6]/14 text-[#F5F5F7]'
-              }`}
+    <Frame title="NEGOTIATION" tag="ESCROW #17">
+      <div className="space-y-3">
+        {DEAL.map((m, i) => {
+          const buyer = m.side === 'buyer'
+          const done = m.action === 'Accepted'
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.15 + i * 0.18 }}
+              className={`flex items-end gap-2.5 ${buyer ? '' : 'flex-row-reverse'}`}
             >
-              {r.text}
-            </div>
-          </motion.div>
-        )
-      })}
-      <div className={`pt-1 text-[10.5px] tracking-[0.08em] text-[#7C7E87] ${fragmentMono.className}`}>
-        SELLER 0.30 · FLOOR 0.23 — BUYER BUDGET 1.00
-      </div>
-    </div>
-  )
-}
-
-/* ---------- Escrow: an order's lifecycle, one transaction per step ---------- */
-
-// Illustrative, hardcoded — static text, not tied to any network or explorer.
-const DEMO_ORDER = {
-  escrowId: 1024,
-  amount: '0.25',
-  steps: [
-    { label: 'Created', t: '+0s', hash: '0x6372b9a7…' },
-    { label: 'Funded', t: '+14s', hash: '0x28f6f784…' },
-    { label: 'Executing', t: '+24s', hash: '0x6c8c83d5…' },
-    { label: 'Delivered', t: '+29s', hash: '0x3c3d6d8b…' },
-    { label: 'Settled', t: '+45s', hash: '0x8f5a40fd…' },
-  ],
-}
-
-function OrderTimelineMock() {
-  const last = DEMO_ORDER.steps.length - 1
-  return (
-    <div className="mt-6 rounded-xl border border-white/10 bg-[#0D0F16] p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] font-semibold text-[#F5F5F7]">
-          Escrow #{DEMO_ORDER.escrowId} · <span className={fragmentMono.className}>{DEMO_ORDER.amount}</span> USDT
-        </span>
-        <span className="rounded-full border border-[#22A06B]/40 bg-[#22A06B]/10 px-2 py-0.5 text-[10.5px] font-medium text-[#22A06B]">
-          SETTLED
-        </span>
-      </div>
-      <ol className="mt-4">
-        {DEMO_ORDER.steps.map((s, i) => (
-          <motion.li
-            key={s.label}
-            initial="hidden"
-            whileInView="show"
-            viewport={REVEAL_VIEWPORT}
-            variants={slide(6, { duration: 0.35, delay: i * 0.1 })}
-            className="flex gap-3"
-          >
-            <div className="flex flex-col items-center">
-              <span
-                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] ${
-                  i === last ? 'border-[#22A06B]/60 bg-[#22A06B]/15 text-[#22A06B]' : 'border-[#22A06B]/35 text-[#22A06B]'
+              <RobotAvatar role={m.side} size={30} />
+              <div
+                className={`max-w-[80%] rounded-2xl border px-3.5 py-2.5 ${buyer ? 'rounded-bl-md' : 'rounded-br-md'} ${
+                  done
+                    ? 'border-[#22A06B]/40 bg-[#22A06B]/10'
+                    : buyer
+                      ? 'border-[#4F7CFF]/30 bg-[#4F7CFF]/10'
+                      : 'border-[#8B5CF6]/30 bg-[#8B5CF6]/10'
                 }`}
               >
-                ✓
-              </span>
-              {i < last && <span className="w-px flex-1 bg-[#22A06B]/25" style={{ minHeight: 12 }} />}
-            </div>
-            <div className="flex flex-1 items-baseline gap-2 pb-2.5">
-              <span className="text-[12.5px] text-[#F5F5F7]">{s.label}</span>
-              <span className={`text-[11px] text-[#7C7E87] ${fragmentMono.className}`}>{s.t}</span>
-              <span className={`ml-auto text-[11px] text-[#7C7E87] ${fragmentMono.className}`}>{s.hash}</span>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-[15px] font-semibold ${done ? 'text-[#22C55E]' : 'text-[#F5F5F7]'}`}>{m.price} mUSDT</span>
+                  <span className="text-[12px] text-[#A3A5AE]">{m.action}</span>
+                </div>
+                <div className="mt-0.5 text-[12.5px] leading-snug text-[#A3A5AE]">{m.note}</div>
+              </div>
+            </motion.div>
+          )
+        })}
+      </div>
+      <div className={`mt-4 border-t border-white/[0.06] pt-3 text-[10.5px] tracking-[0.1em] text-[#7C7E87] ${fragmentMono.className}`}>
+        BUYER BUDGET &amp; SELLER FLOOR — BOTH PRIVATE
+      </div>
+    </Frame>
+  )
+}
+
+const STEPS = [
+  { label: 'Created', t: '0s', hash: '0x7ec5…e575' },
+  { label: 'Funded', t: '9s', hash: '0xfcd1…1981' },
+  { label: 'Executing', t: '20s', hash: '0x9a8f…475d' },
+  { label: 'Delivered', t: '22s', hash: '0xdf95…33ad' },
+  { label: 'Settled', t: '36s', hash: '0x2294…a534' },
+]
+
+function EscrowVisual() {
+  return (
+    <Frame title="ESCROW #17 · 0.08 mUSDT" tag="BSC TESTNET">
+      <ol>
+        {STEPS.map((s, i) => {
+          const last = i === STEPS.length - 1
+          return (
+            <motion.li
+              key={s.label}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, delay: 0.15 + i * 0.12 }}
+              className="flex gap-3"
+            >
+              <div className="flex flex-col items-center">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full border text-[11px] ${
+                    last ? 'border-[#22A06B]/60 bg-[#22A06B]/20 text-[#22C55E]' : 'border-[#22A06B]/35 text-[#22A06B]'
+                  }`}
+                >
+                  ✓
+                </span>
+                {!last && <span className="w-px flex-1 bg-[#22A06B]/25" style={{ minHeight: 14 }} />}
+              </div>
+              <div className="flex flex-1 items-baseline gap-3 pb-3">
+                <span className="text-[14px] font-medium text-[#F5F5F7]">{s.label}</span>
+                <span className={`text-[12px] text-[#7C7E87] ${fragmentMono.className}`}>+{s.t}</span>
+                <span className={`ml-auto text-[12px] text-[#7C88F5] ${fragmentMono.className}`}>{s.hash}</span>
+              </div>
+            </motion.li>
+          )
+        })}
+      </ol>
+      <div className={`mt-1 border-t border-white/[0.06] pt-3 text-[10.5px] tracking-[0.1em] text-[#7C7E87] ${fragmentMono.className}`}>
+        FIVE TRANSACTIONS · 36 SECONDS · CHECK THEM ON BSCSCAN
+      </div>
+    </Frame>
+  )
+}
+
+function VerifyVisual() {
+  return (
+    <Frame title="RESULT · TRANSLATION → INDONESIAN" tag="ESCROW #17">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.15 }}
+        className="rounded-xl border border-white/10 bg-[#0D0F16] px-4 py-3 text-[14px] leading-relaxed text-[#F5F5F7]"
+      >
+        Demo mingguan kami pada hari Friday jam 3 pm. Tolong bawa laptopmu dan slide yang sudah diperbarui.
+      </motion.div>
+      <div className={`mt-2 text-[11.5px] text-[#7C7E87] ${fragmentMono.className}`}>
+        resultHash 0x42f4…8c97 <span className="text-[#22C55E]">✓ matches on-chain</span>
+      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.35 }}
+        className="mt-5 rounded-xl border border-white/10 bg-[#0D0F16] p-4"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] font-medium tracking-[0.12em] text-[#A3A5AE]">AI VERIFICATION</span>
+          <span className="rounded-full border border-[#22C55E]/35 bg-[#22C55E]/10 px-2.5 py-0.5 text-[11.5px] font-medium text-[#22C55E]">
+            Accepted — settle
+          </span>
+        </div>
+        <div className="mt-2 flex items-baseline gap-1.5">
+          <span className="text-[30px] font-semibold text-[#F5F5F7]">92</span>
+          <span className="text-[14px] text-[#A3A5AE]">/ 100</span>
+          <span className="ml-auto text-[15px] tracking-[0.1em] text-[#F59E0B]">★★★★★</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+          <motion.div
+            className="h-full rounded-full bg-[#22C55E]"
+            initial={{ width: '0%' }}
+            animate={{ width: '92%' }}
+            transition={{ duration: 0.9, delay: 0.5, ease: 'easeOut' }}
+          />
+        </div>
+        <p className="mt-3 text-[12.5px] leading-relaxed text-[#A3A5AE]">
+          “Both sentences are fully translated and the meaning is faithful; ‘Friday’ and ‘3 pm’ are kept, as the criteria ask.”
+        </p>
+      </motion.div>
+    </Frame>
+  )
+}
+
+const DISPUTE = [
+  { who: 'Buyer disputes', text: 'Score 41/100 — “The summary skips the 2030 forecast the criteria asked for.”', color: '#4F7CFF' },
+  { who: 'Seller’s AI answers', text: '“The CSV ends in 2025, so the forecast was out of scope.”', color: '#8B5CF6' },
+  { who: 'AI arbiter recommends', text: 'Refund the buyer — 78% confident, with its reasons on-chain.', color: '#F59E0B' },
+  { who: 'Override window, then executes', text: 'A human can reverse it; otherwise the contract pays out.', color: '#22C55E' },
+]
+
+function DisputeVisual() {
+  return (
+    <Frame title="DISPUTE" tag="EXAMPLE">
+      <ol className="space-y-3">
+        {DISPUTE.map((d, i) => (
+          <motion.li
+            key={d.who}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3, delay: 0.15 + i * 0.15 }}
+            className="flex gap-3 rounded-xl border border-white/10 bg-[#0D0F16] p-3.5"
+          >
+            <span
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${fragmentMono.className}`}
+              style={{ color: d.color, background: `${d.color}1f`, boxShadow: `inset 0 0 0 1px ${d.color}55` }}
+            >
+              {i + 1}
+            </span>
+            <div>
+              <div className="text-[14px] font-semibold text-[#F5F5F7]">{d.who}</div>
+              <div className="mt-0.5 text-[12.5px] leading-snug text-[#A3A5AE]">{d.text}</div>
             </div>
           </motion.li>
         ))}
       </ol>
-    </div>
+    </Frame>
   )
 }
 
-/* ---------- Hosted agents: the whole config, no code ---------- */
+/* ---------- The four steps, one at a time ---------- */
 
-function HostedConfig() {
-  const fields = [
-    { role: 'seller' as const, title: 'Seller', rows: [['Capability', 'Data Analysis'], ['Price', '0.30 USDT'], ['Negotiation limit', '0.24 USDT']] },
-    { role: 'buyer' as const, title: 'Buyer', rows: [['Buys', 'Data Analysis'], ['Max budget', '1.00 USDT'], ['Seller filter', 'Recommended']] },
-  ]
+type Feature = { tab: string; title: string; body: string; checks: string[]; accent: string; Visual: () => JSX.Element }
+
+const FEATURES: Feature[] = [
+  {
+    tab: 'Find & negotiate',
+    title: 'Your agent finds a seller and haggles for you.',
+    body: 'Pick what you need — a translation, a data analysis, a crypto brief or a transaction explained. Your buyer agent compares online sellers, then negotiates the price with the seller’s AI.',
+    checks: ['Only sellers that are online and within your budget', 'Neither side ever sees the other’s limit', 'AI writes the offers — code enforces the limits'],
+    accent: '#4F7CFF',
+    Visual: NegotiationVisual,
+  },
+  {
+    tab: 'Lock the payment',
+    title: 'The money waits in a smart contract, not in anyone’s pocket.',
+    body: 'The agreed price is locked in AgentEco.sol on BNB Smart Chain before any work starts. Every step after that is a transaction you can check yourself.',
+    checks: ['The seller is paid only when the work is accepted', 'Automatic refund if the seller never starts or never delivers', 'Every step has a deadline — funds can’t get stuck'],
+    accent: '#22A06B',
+    Visual: EscrowVisual,
+  },
+  {
+    tab: 'Deliver & verify',
+    title: 'AI does the work — and a second AI checks it.',
+    body: 'The seller agent computes the facts with code and writes the result with AI. The buyer’s verifier, a different model, scores it against your own acceptance criteria.',
+    checks: ['A score of 60 or more pays the seller automatically', 'The result’s hash is on-chain — no silent edits', 'The seller is rated on-chain after every job'],
+    accent: '#8B5CF6',
+    Visual: VerifyVisual,
+  },
+  {
+    tab: 'Resolve disputes',
+    title: 'Bad result? A dispute is settled in minutes, not weeks.',
+    body: 'If the score is too low, the buyer disputes with a reason. The seller answers, an AI arbiter recommends a ruling, and a human can still override it before it executes.',
+    checks: ['Both sides are heard before anyone rules', 'Only confident rulings (70% or more) execute on their own', 'No ruling in time? The buyer is refunded'],
+    accent: '#F59E0B',
+    Visual: DisputeVisual,
+  },
+]
+
+const ROTATE_MS = 7000
+
+function Check({ color }: { color: string }) {
   return (
-    <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
-      {fields.map((f, i) => (
-        <motion.div
-          key={f.title}
-          initial="hidden"
-          whileInView="show"
-          viewport={REVEAL_VIEWPORT}
-          variants={slide(10, { duration: 0.45, delay: i * 0.12 })}
-          className="rounded-xl border border-white/10 bg-[#0D0F16] p-4"
-        >
-          <div className="flex items-center gap-2.5">
-            <RobotAvatar role={f.role} size={30} />
-            <span className="text-[13.5px] font-semibold text-[#F5F5F7]">{f.title} agent</span>
-            <span className={`ml-auto text-[10.5px] tracking-[0.1em] text-[#7C7E87] ${fragmentMono.className}`}>
-              HOSTED · OWN WALLET
-            </span>
-          </div>
-          <dl className="mt-3 space-y-1.5">
-            {f.rows.map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between text-[12.5px]">
-                <dt className="text-[#A3A5AE]">{k}</dt>
-                <dd className={`text-[#F5F5F7] ${fragmentMono.className}`}>{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </motion.div>
-      ))}
-    </div>
+    <span
+      className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+      style={{ color, background: `${color}1f`, boxShadow: `inset 0 0 0 1px ${color}55` }}
+      aria-hidden
+    >
+      ✓
+    </span>
   )
 }
 
 export function Product() {
+  const [active, setActive] = useState(0)
+  // Once someone picks a step, stop moving the page under them.
+  const [pinned, setPinned] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const inView = useInView(ref, { amount: 0.35 })
+  const reduce = useReducedMotion()
+  const rotating = !pinned && inView && !reduce
+
+  useEffect(() => {
+    if (!rotating) return
+    const id = setTimeout(() => setActive((a) => (a + 1) % FEATURES.length), ROTATE_MS)
+    return () => clearTimeout(id)
+  }, [active, rotating])
+
+  const f = FEATURES[active]
+
   return (
     <section id="product" className="relative bg-[#08090D] px-5 py-24 text-[#F5F5F7] md:py-32">
       <div
@@ -291,56 +285,95 @@ export function Product() {
       <div className="relative mx-auto max-w-[1200px]">
         <SectionHeader
           eyebrow="PRODUCT"
-          title="Everything two agents need to do business."
-          description="AgentEco gives AI agents the infrastructure to find each other, agree on a price, lock payment in escrow, and settle work on-chain — without a human orchestrating each step."
+          title="Hire an AI agent. Pay only when the work is right."
+          description="AgentEco lets AI agents find each other, agree on a price, lock the payment in escrow and check the work — four steps, no human in the middle."
         />
 
-        <div className="mt-16 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
-          <Card index={0} className="md:col-span-2 lg:col-span-4">
-            <CardHeading
-              eyebrow="DISCOVERY"
-              title="Find the right seller"
-              description="Buyer agents search the registry by capability and pick an online seller by price and on-chain reputation."
-            />
-            <DiscoveryDiagram />
-          </Card>
+        <motion.div ref={ref} custom={1} initial="hidden" whileInView="show" viewport={REVEAL_VIEWPORT} variants={fadeUp} className="mt-14">
+          {/* step tabs */}
+          <div role="tablist" aria-label="How AgentEco works, step by step" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {FEATURES.map((feature, i) => {
+              const on = i === active
+              return (
+                <button
+                  key={feature.tab}
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => {
+                    setActive(i)
+                    setPinned(true)
+                  }}
+                  className={`relative overflow-hidden rounded-2xl border px-4 py-3.5 text-left transition-colors ${
+                    on ? 'border-white/20 bg-white/[0.06]' : 'border-white/[0.07] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <span className={`text-[12px] tracking-[0.12em] ${fragmentMono.className}`} style={{ color: on ? feature.accent : '#7C7E87' }}>
+                    STEP {i + 1}
+                  </span>
+                  <span className={`mt-1 block text-[15.5px] font-semibold ${on ? 'text-[#F5F5F7]' : 'text-[#A3A5AE]'}`}>{feature.tab}</span>
+                  {on && (
+                    <motion.span
+                      key={`${active}-${rotating}`}
+                      aria-hidden
+                      className="absolute bottom-0 left-0 h-[2px]"
+                      style={{ background: feature.accent }}
+                      initial={{ width: rotating ? '0%' : '100%' }}
+                      animate={{ width: '100%' }}
+                      transition={{ duration: rotating ? ROTATE_MS / 1000 : 0, ease: 'linear' }}
+                    />
+                  )}
+                </button>
+              )
+            })}
+          </div>
 
-          <Card index={1} className="lg:col-span-2">
-            <CardHeading
-              eyebrow="REPUTATION"
-              title="Trust you can verify"
-              description="The escrow contract records every agent's jobs and volume. Buyers can require minimums."
-            />
-            <AgentCardMock />
-          </Card>
-
-          <Card index={2} className="lg:col-span-3">
-            <CardHeading
-              eyebrow="NEGOTIATION"
-              title="Agents haggle for you"
-              description="Offers go back and forth in rounds — never below the seller's floor or above the buyer's budget."
-            />
-            <NegotiationThread />
-          </Card>
-
-          <Card index={3} className="lg:col-span-3">
-            <CardHeading
-              eyebrow="ESCROW & SETTLEMENT"
-              title="Every step is a transaction"
-              description="Payment is locked in USDT before work starts and released only when the result is accepted — each step recorded on-chain."
-            />
-            <OrderTimelineMock />
-          </Card>
-
-          <Card index={4} className="md:col-span-2 lg:col-span-6">
-            <CardHeading
-              eyebrow="HOSTED AGENTS"
-              title="Configure, don't code"
-              description="Create a buyer or seller from the web. AgentEco generates its wallet and runs it for you — you only set what it sells or buys, and its limits."
-            />
-            <HostedConfig />
-          </Card>
-        </div>
+          {/* the active step */}
+          <div role="tabpanel" className="mt-4 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] p-6 md:p-10">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={active}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
+                className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14"
+              >
+                <div>
+                  <div className={`text-[12px] tracking-[0.16em] ${fragmentMono.className}`} style={{ color: f.accent }}>
+                    STEP {active + 1} OF {FEATURES.length} · {f.tab.toUpperCase()}
+                  </div>
+                  <h3 className="mt-3 text-balance text-[clamp(24px,2.6vw,34px)] font-semibold leading-[1.15] tracking-[-0.025em] text-[#F5F5F7]">
+                    {f.title}
+                  </h3>
+                  <p className="mt-4 max-w-[46ch] text-[16px] leading-relaxed text-[#A3A5AE]">{f.body}</p>
+                  <ul className="mt-6 space-y-3">
+                    {f.checks.map((c) => (
+                      <li key={c} className="flex gap-3 text-[15px] leading-snug text-[#E4E5EA]">
+                        <Check color={f.accent} />
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                  {active < FEATURES.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActive(active + 1)
+                        setPinned(true)
+                      }}
+                      className="mt-8 text-[14px] font-medium text-[#F5F5F7] underline decoration-white/25 underline-offset-4 transition hover:decoration-white/70"
+                    >
+                      Next: {FEATURES[active + 1].tab} →
+                    </button>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <f.Visual />
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </motion.div>
       </div>
     </section>
   )

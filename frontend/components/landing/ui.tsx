@@ -65,7 +65,7 @@ export function SectionHeader({
         whileInView="show"
         viewport={REVEAL_VIEWPORT}
         variants={fadeUp}
-        className={`mt-4 text-[15.5px] leading-relaxed text-[#A3A5AE] ${centered ? 'mx-auto max-w-[42em]' : ''}`}
+        className={`mt-4 text-[17px] leading-relaxed text-[#A3A5AE] ${centered ? 'mx-auto max-w-[40em]' : ''}`}
       >
         {description}
       </motion.p>

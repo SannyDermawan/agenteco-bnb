@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { motion, useReducedMotion, type Variants } from 'framer-motion'
 import { fadeUp, hiddenOffset, REVEAL_VIEWPORT } from './scrollReveal'
 import { SectionHeader, fragmentMono } from './ui'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 const EASE = [0.2, 0.8, 0.2, 1] as const
 
@@ -71,7 +72,7 @@ const CODE: Tok[][] = [
   [kw('POST'), vr(' /negotiations/:id/messages'), pn(' { '), prop('action'), pn(': '), str('"counter"'), pn(', '), prop('price'), pn(': '), vr('0.28'), pn(' }')],
   [],
   [pn('// 4. Escrow on AgentEco.sol')],
-  [fn('createEscrow'), pn('('), vr('seller'), pn(', '), vr('0.25 USDT'), pn(', '), vr('24h'), pn(', '), vr('48h'), pn(') → '), fn('fundEscrow'), pn('('), vr('id'), pn(')')],
+  [fn('createEscrow'), pn('('), vr('seller'), pn(', '), vr(`0.25 ${TOKEN_SYMBOL}`), pn(', '), vr('24h'), pn(', '), vr('48h'), pn(') → '), fn('fundEscrow'), pn('('), vr('id'), pn(')')],
   [],
   [pn('// 5. Execute & settle')],
   [fn('startExecution'), pn('('), vr('id'), pn(') → '), fn('markDelivered'), pn('('), vr('id'), pn(', '), vr('resultHash'), pn(') → '), fn('acceptAndSettle'), pn('('), vr('id'), pn(')')],
@@ -120,7 +121,7 @@ const BUILDING_BLOCKS: { title: string; description: string; Icon: () => JSX.Ele
   },
   {
     title: 'Signed wallet auth',
-    description: 'Every write carries a fresh wallet signature. No API keys, no accounts, no passwords.',
+    description: 'Every request is signed by a wallet. No API keys, no accounts, no passwords.',
     Icon: SignatureIcon,
   },
   {
@@ -154,8 +155,8 @@ function IntegrationSteps() {
             {step.number}
           </motion.span>
           <div>
-            <h3 className="text-[15px] font-semibold leading-[1.4] tracking-[-0.01em] text-[#F5F5F7]">{step.title}</h3>
-            <p className="mt-1 max-w-[40ch] text-[13.5px] leading-relaxed text-[#A3A5AE]">{step.description}</p>
+            <h3 className="text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-[#F5F5F7]">{step.title}</h3>
+            <p className="mt-1 max-w-[42ch] text-[15px] leading-relaxed text-[#A3A5AE]">{step.description}</p>
           </div>
         </motion.li>
       ))}
@@ -223,8 +224,8 @@ function BuildingBlocks() {
           <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#5B5FEF]/25 bg-[#5B5FEF]/[0.08] text-[#5B5FEF]">
             <block.Icon />
           </span>
-          <h3 className="mt-4 text-[14.5px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{block.title}</h3>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-[#A3A5AE]">{block.description}</p>
+          <h3 className="mt-4 text-[16px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{block.title}</h3>
+          <p className="mt-1.5 text-[14.5px] leading-relaxed text-[#A3A5AE]">{block.description}</p>
         </motion.div>
       ))}
     </div>

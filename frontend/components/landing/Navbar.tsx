@@ -9,6 +9,7 @@ const NAV = [
   { label: 'Product', href: '#product' },
   { label: 'How It Works', href: '#how-it-works' },
   { label: 'Developers', href: '#developers' },
+  { label: 'FAQ', href: '#faq' },
 ] as const
 
 const SECTION_IDS = NAV.map((item) => item.href.slice(1))
@@ -44,6 +45,15 @@ function CodeIcon({ className }: { className?: string }) {
   )
 }
 
+function QuestionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M6.3 6.2a1.8 1.8 0 0 1 3.5.6c0 1.2-1.8 1.6-1.8 2.6M8 11.6h.01" />
+    </svg>
+  )
+}
+
 function ArrowIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
@@ -57,6 +67,7 @@ const ICONS: Record<(typeof NAV)[number]['label'], (props: { className?: string 
   Product: GridIcon,
   'How It Works': FlowIcon,
   Developers: CodeIcon,
+  FAQ: QuestionIcon,
 }
 
 const PILL_SPRING = { type: 'spring', stiffness: 480, damping: 36, mass: 0.7 } as const

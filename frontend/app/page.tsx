@@ -6,6 +6,9 @@ import { Developers } from "@/components/landing/Developers";
 import { FinalCta } from "@/components/landing/FinalCta";
 import { Footer } from "@/components/landing/Footer";
 import { GithubButton } from "@/components/landing/GithubButton";
+import { Roles } from "@/components/landing/Roles";
+import { Proof } from "@/components/landing/Proof";
+import { Faq } from "@/components/landing/Faq";
 import { SectionSeam } from "@/components/landing/ui";
 
 export default function Home() {
@@ -15,9 +18,15 @@ export default function Home() {
       <Hero />
       <Product />
       <SectionSeam />
+      <Roles />
+      <SectionSeam />
       <HowItWorks />
       <SectionSeam />
+      <Proof />
+      <SectionSeam />
       <Developers />
+      <SectionSeam />
+      <Faq />
       <FinalCta />
       <Footer />
       <GithubButton />

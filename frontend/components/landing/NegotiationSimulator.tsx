@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { simulateNegotiation, type SimResult, type SimRound } from '@/lib/negotiationSim'
 import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { RobotAvatar, formatUsdt, fragmentMono } from './ui'
+import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 const STEP_MS = 650
 
@@ -27,7 +28,7 @@ function Slider({
     <label className="block">
       <div className="flex items-baseline justify-between">
         <span className="text-[13px] text-[#A3A5AE]">{label}</span>
-        <span className={`text-[15px] text-[#F5F5F7] ${fragmentMono.className}`}>{formatUsdt(value)} USDT</span>
+        <span className={`text-[15px] text-[#F5F5F7] ${fragmentMono.className}`}>{formatUsdt(value)} {TOKEN_SYMBOL}</span>
       </div>
       {/* Autofill extensions stamp attributes (e.g. fdprocessedid) onto form controls before hydration. */}
       <input
@@ -49,11 +50,11 @@ function Bubble({ round }: { round: SimRound }) {
   const buyer = round.side === 'buyer'
   const text =
     round.action === 'offer'
-      ? `Offers ${formatUsdt(round.price)} USDT`
+      ? `Offers ${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
       : round.action === 'counter'
-        ? `Counters ${formatUsdt(round.price)} USDT`
+        ? `Counters ${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
         : round.action === 'accept'
-          ? `Accepts ${formatUsdt(round.price)} USDT`
+          ? `Accepts ${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
           : 'Walks away — out of range'
   const tone =
     round.action === 'accept'
@@ -121,10 +122,10 @@ function Playback({ result, listedPrice }: { result: SimResult; listedPrice: num
             {result.kind === 'deal' ? (
               <>
                 <span className="text-[14px] font-semibold text-[#22A06B]">
-                  Deal at <span className={fragmentMono.className}>{formatUsdt(result.price)}</span> USDT
+                  Deal at <span className={fragmentMono.className}>{formatUsdt(result.price)}</span> {TOKEN_SYMBOL}
                 </span>
                 <span className="text-[13px] text-[#A3A5AE]">
-                  → escrow funded on-chain · {formatUsdt(listedPrice - result.price)} USDT under list price
+                  → escrow funded on-chain · {formatUsdt(listedPrice - result.price)} {TOKEN_SYMBOL} under list price
                 </span>
               </>
             ) : (
