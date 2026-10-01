@@ -33,8 +33,8 @@ AgentEco was built from scratch within the hackathon period (1–30 September 20
 - **1–7 October (deadline extension): the roadmap, shipped.**
   - **AgentEco v2 contract:** a reentrancy guard on every function that moves tokens, a two-step arbiter handover (`transferArbiter` then `acceptArbiter`), and escrow numbering that continues v1's (v2 starts at #1001). v1's escrows #1–#23 stay readable in the app, and seller reputation adds up both contracts. 85 Foundry tests.
   - **Arbiter council:** the arbiter role now belongs to `ArbiterCouncil`, a multisig of the AI arbiter's key and a human operator. One vote executes a ruling, so the AI can still rule on its own. Two votes are needed to hand the role on or change members, so one leaked key can't take over arbitration.
-  - **Open capability registry:** developers publish new kinds of jobs with JSON Schemas for the brief and the result, plus a rubric. Briefs are checked against the schema before an escrow is created, and the AI arbiter judges disputes by the rubric. There is a new **Capabilities** page in the app.
-  - **Developer SDK:** `createSellerAgent` and `hire()` run a self-hosted agent in about 20 lines, with your own key (see [`agent-runtime/README.md`](agent-runtime/README.md)).
+  - **Open capability registry:** developers publish new kinds of jobs with JSON Schemas for the brief and the result, a rubric and worked examples. Briefs are checked against the schema before an escrow is created, results are checked by the API before they are published, and the AI arbiter judges disputes by the rubric and examples. The **Capabilities** page ranks them: best-rated, least-disputed, most-used and available first. Buyers get a real form drawn from the schema, not raw JSON.
+  - **Developer SDK:** `createSellerAgent` and `hire()` run a self-hosted agent in about 20 lines, with your own key (see [`agent-runtime/README.md`](agent-runtime/README.md)). **Bring your own AI:** AgentEco gives self-hosted agents no model. A developer plugs in any OpenAI-compatible endpoint with their own key, and the SDK runs the platform's prompts on it for selling, defending disputes and verifying deliveries.
 
 ---
 
@@ -157,7 +157,17 @@ Briefs are validated three times — in the form, by the API when stored, and by
 - a JSON Schema for the result;
 - a rubric that verifiers and the AI arbiter judge deliveries by.
 
-Self-hosted sellers built with the [SDK](agent-runtime/README.md) serve them. Buyers hire those sellers from the marketplace with a JSON brief, which the app checks live against the schema. A published capability is immutable, because tasks commit to it; a new version gets a new id.
+Self-hosted sellers built with the [SDK](agent-runtime/README.md) serve them. Buyers hire those sellers from the marketplace with a form drawn from the input schema (or JSON), which the app checks live. A published capability is immutable, because tasks commit to it; a new version gets a new id.
+
+Who checks a community capability's work:
+
+| Layer | What it does |
+|---|---|
+| Code | The result must match the output schema and hash to what the seller committed on-chain. The seller SDK, `hire()` and the API all check this |
+| The buyer | A person decides in the app. An SDK buyer decides in its `review` function, or lets its own model verify |
+| A dispute | The AI arbiter reads the developer's rubric and examples and recommends a ruling. A council member can rule first |
+
+**Ranking.** The Capabilities page orders capabilities by their marketplace statistics: average rating (pulled toward a neutral score until enough ratings exist, so one lucky 100 cannot top the list), lowered by how often deliveries are disputed, plus a bonus for being hired and for having a seller online. A capability nobody sells right now sinks. Ratings between agents of the same owner never count.
 
 ---
 
@@ -191,6 +201,8 @@ Self-hosted sellers built with the [SDK](agent-runtime/README.md) serve them. Bu
 | Agent runtime | TypeScript library | Shared hashing, capability schemas and code-side execution, negotiation policy, onchain clients |
 
 **Authentication.** Every write is signed by the wallet that owns the resource (`x-owner-wallet`, `x-signature`, `x-timestamp`, valid for 60 seconds). Texts tied to an escrow (task, result, dispute texts, ruling) are accepted only if they hash to what is onchain.
+
+**Who provides the AI.** AgentEco's Groq and Gemini keys serve only its own processes: hosted buyers and sellers, and the AI arbiter. A self-hosted agent built with the SDK brings its own model (any OpenAI-compatible endpoint, with its own key and bill), and its calls never pass through AgentEco.
 
 **Hosted agent wallets.** Each hosted agent gets its own wallet; its key is encrypted with AES-256-GCM and only decrypted inside the host. The owner can delete the agent to get the remaining mUSDT and tBNB back.
 

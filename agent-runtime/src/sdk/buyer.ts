@@ -11,6 +11,7 @@ import { getEscrowResult } from '../resultsClient.ts'
 import { submitDisputeReason } from '../disputesClient.ts'
 import { hashPreimage, textHash } from '../shared/hashes.ts'
 import { resolveCapability } from './capability.ts'
+import { scoreWithAi, type AiModel } from './ai.ts'
 import { DEFAULT_API_URL, type Logger, consoleLogger, sleep } from './common.ts'
 
 export type Review =
@@ -33,8 +34,17 @@ export interface HireOptions {
   /** A specific seller (agent id). Default: the cheapest online seller of the capability whose opening offer fits the budget. */
   sellerId?: string
   /**
+   * Your own model (see openAiCompatible), used as the verifier when you pass no
+   * `review`: it scores the delivery 0–100 against the capability's rubric and your
+   * criteria — the same verifier AgentEco's hosted buyers use — and accepts at 60 or
+   * more (rating the seller with the score), otherwise disputes with its reasons.
+   * AgentEco provides no model for self-hosted agents; this one is yours.
+   */
+  ai?: AiModel
+  /**
    * Decide on the delivered result (already checked against the output schema
-   * and the on-chain hash). Default: accept. Rejecting raises a dispute.
+   * and the on-chain hash). Default: your `ai` verifier when given, else accept.
+   * Rejecting raises a dispute.
    */
   review?: (result: Record<string, unknown>) => Promise<Review> | Review
   /** Name of the buyer agent in the registry. Default "SDK buyer". */
@@ -142,7 +152,8 @@ export async function hire(options: HireOptions): Promise<HireResult> {
     })
   }
   if (negotiation.status !== 'accepted') throw new Error(`No deal with ${seller.name}: the prices never met.`)
-  const price = String(negotiation.agreedPrice)
+  // Float noise from the policy's arithmetic (0.07000000000000001) never reaches the escrow amount.
+  const price = String(Number(Number(negotiation.agreedPrice).toFixed(6)))
   log(`deal at ${price}`)
 
   // 4. Task → escrow → fund → link (the API checks the chain agrees), and record it on the order.
@@ -179,9 +190,30 @@ export async function hire(options: HireOptions): Promise<HireResult> {
   if (hashPreimage(committedJson).toLowerCase() !== onchainHash.toLowerCase()) problems.push('the result does not match the hash committed on-chain')
   const shape = capability.checkResult(result)
   if (!shape.ok) problems.push(`the result does not match the ${options.capability} output schema (${shape.error})`)
-  const review: Review = problems.length
-    ? { accept: false, reason: `Automatic check failed: ${problems.join('; ')}.` }
-    : await (options.review ?? (() => ({ accept: true }) as Review))(result)
+  let review: Review
+  if (problems.length) {
+    review = { accept: false, reason: `Automatic check failed: ${problems.join('; ')}.` }
+  } else if (options.review) {
+    review = await options.review(result)
+  } else if (options.ai) {
+    const verdict = await scoreWithAi(
+      options.ai,
+      { capability: options.capability, label: capability.name, rubric: capability.rubric, examples: capability.examples, brief: brief.brief, criteria: options.criteria ?? '', result },
+      { log }
+    )
+    if (!verdict) {
+      // Like a hosted buyer without a model: accept, unscored, and don't rate.
+      log('the verifier model did not answer — accepting without a score')
+      review = { accept: true }
+    } else {
+      log(`verifier: ${verdict.score}/100 — ${verdict.rationale}`)
+      review = verdict.accept
+        ? { accept: true, rating: verdict.score }
+        : { accept: false, reason: `AI verification scored ${verdict.score}/100 (accept threshold 60). ${verdict.rationale}`.slice(0, 1000) }
+    }
+  } else {
+    review = { accept: true }
+  }
 
   const sellerInfo = { id: seller.id, name: seller.name, wallet: seller.walletAddress }
   if (!review.accept) {

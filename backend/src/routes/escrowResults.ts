@@ -6,6 +6,7 @@ import { buildResultPreimage, hashPreimage } from '../../../agent-runtime/src/sh
 import { agentEcoFor, appChain, appTransport } from '../network.ts'
 import { createEscrowResultSchema } from '../schemas/escrowResult.ts'
 import { guardEscrow } from '../access.ts'
+import { checkResultShape } from '../capabilityRegistry.ts'
 
 export const escrowResultsRouter = Router()
 
@@ -37,7 +38,13 @@ escrowResultsRouter.get('/:escrowId', async (req, res) => {
 escrowResultsRouter.post('/', async (req, res) => {
   const parsed = createEscrowResultSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
-  const { escrowId, capability, result } = parsed.data
+  const { escrowId, result } = parsed.data
+  // The task behind the escrow fixes the capability; a claim in the body can't dodge its schema.
+  const task = await prisma.task.findUnique({ where: { escrowId }, select: { capability: true } })
+  if (task && task.capability !== parsed.data.capability) {
+    return res.status(400).json({ error: `This escrow is for ${task.capability}, not ${parsed.data.capability}.` })
+  }
+  const capability = task?.capability ?? parsed.data.capability
 
   let onChainHash: `0x${string}`
   try {
@@ -59,6 +66,11 @@ escrowResultsRouter.post('/', async (req, res) => {
     return res.status(400).json({
       error: 'Result does not match the hash already committed on-chain for this escrow (markDelivered must run first).',
     })
+  }
+
+  const shape = await checkResultShape(capability, result)
+  if (!shape.ok) {
+    return res.status(400).json({ error: `The result does not match the ${capability} output schema: ${shape.error}` })
   }
 
   const saved = await prisma.escrowResult.upsert({

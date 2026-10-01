@@ -45,9 +45,9 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
   // No platform capability: a community one from the open registry, briefed as JSON.
   const { data: registry } = useCapabilities()
   const community = capability ? undefined : registry?.find((c) => c.source === 'community' && agent.capabilities.includes(c.id))
-  // Prefilled with an example shaped like the input schema until the buyer edits it.
+  // Prefilled with the capability's first worked example (or one shaped like its input schema) until the buyer edits it.
   const [editedJson, setCustomJson] = useState<string | null>(null)
-  const customJson = editedJson ?? (community ? JSON.stringify(exampleFromSchema(community.inputSchema), null, 2) : '')
+  const customJson = editedJson ?? (community ? JSON.stringify(community.examples?.[0]?.input ?? exampleFromSchema(community.inputSchema), null, 2) : '')
   const [briefDraft, setBriefDraft] = useState<BriefDraft>(EMPTY_BRIEF_DRAFT)
   const [criteria, setCriteria] = useState('')
   const [showBriefErrors, setShowBriefErrors] = useState(false)

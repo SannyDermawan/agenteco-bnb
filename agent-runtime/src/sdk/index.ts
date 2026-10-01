@@ -12,6 +12,8 @@ export type { Job, DisputeContext, SellerAgent, SellerAgentOptions } from './sel
 export { hire } from './buyer.ts'
 export type { HireOptions, HireResult, Review } from './buyer.ts'
 export { registerCapability, listCapabilities } from './registry.ts'
+export { openAiCompatible, askJson, runPlatformJob, defendWithAi, scoreWithAi } from './ai.ts'
+export type { AiModel } from './ai.ts'
 export { resolveCapability } from './capability.ts'
 export type { ResolvedCapability } from './capability.ts'
 export { DEFAULT_API_URL, PUBLIC_API_URL } from './common.ts'

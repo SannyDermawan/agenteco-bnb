@@ -6,7 +6,7 @@ import { CUSTOM_CATEGORIES, registerCapabilitySchema } from '@shared/capabilitie
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { PageFade } from '@/components/app/PageFade'
 import { FIELD_CLASS, Field } from '@/components/app/FormField'
-import { registerCapability, useCapabilities, type CapabilityInfo } from '@/lib/api/capabilities'
+import { registerCapability, useCapabilities, type CapabilityInfo, type CapabilitySort } from '@/lib/api/capabilities'
 
 type Filter = 'all' | 'platform' | 'community'
 
@@ -17,7 +17,7 @@ function truncateAddress(address: string) {
 // What the form starts with: a small, complete capability to edit from.
 const EXAMPLE_INPUT = {
   type: 'object',
-  properties: { text: { type: 'string', minLength: 1, maxLength: 2000 } },
+  properties: { text: { type: 'string', minLength: 1, maxLength: 2000, description: 'The text to score' } },
   required: ['text'],
   additionalProperties: false,
 }
@@ -30,6 +30,10 @@ const EXAMPLE_OUTPUT = {
   },
   required: ['score', 'label', 'reason'],
 }
+const EXAMPLE_EXAMPLES = [
+  { title: 'A happy review', input: { text: 'Great product, fast delivery.' }, output: { score: 0.9, label: 'positive', reason: 'Mentions "great" and "fast".' } },
+  { title: 'A complaint', input: { text: 'Slow and expensive.' }, output: { score: -0.8, label: 'negative', reason: 'Mentions "slow" and "expensive".' } },
+]
 
 function SchemaBlock({ title, schema }: { title: string; schema: unknown }) {
   return (
@@ -42,14 +46,37 @@ function SchemaBlock({ title, schema }: { title: string; schema: unknown }) {
   )
 }
 
-function CapabilityCard({ c }: { c: CapabilityInfo }) {
+function Stat({ value, label, tone }: { value: string; label: string; tone?: 'good' | 'warn' }) {
+  return (
+    <div className="min-w-0">
+      <div className={`text-[15px] font-semibold ${tone === 'good' ? 'text-[#22C55E]' : tone === 'warn' ? 'text-[#F59E0B]' : 'text-[#F5F5F7]'}`}>{value}</div>
+      <div className="text-[11px] text-[#54565F]">{label}</div>
+    </div>
+  )
+}
+
+function CapabilityCard({ c, rank }: { c: CapabilityInfo; rank?: number }) {
   const platform = c.source === 'platform'
+  const s = c.stats
+  const stars = s?.avgRating != null ? (s.avgRating / 20).toFixed(1) : null
   return (
     <NeumorphicCard className="flex flex-col p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-[15px] font-semibold text-[#F5F5F7]">{c.name}</h3>
-          <div className="mt-0.5 truncate font-mono text-[11.5px] text-[#8B8D96]">{c.id}</div>
+        <div className="flex min-w-0 items-start gap-3">
+          {rank !== undefined && (
+            <span
+              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[12px] font-semibold ${
+                rank <= 3 ? 'bg-[#F59E0B]/15 text-[#F59E0B]' : 'bg-white/[0.05] text-[#8B8D96]'
+              }`}
+              title={`Ranked #${rank}`}
+            >
+              {rank}
+            </span>
+          )}
+          <div className="min-w-0">
+            <h3 className="truncate text-[15px] font-semibold text-[#F5F5F7]">{c.name}</h3>
+            <div className="mt-0.5 truncate font-mono text-[11.5px] text-[#8B8D96]">{c.id}</div>
+          </div>
         </div>
         <span
           className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
@@ -59,8 +86,19 @@ function CapabilityCard({ c }: { c: CapabilityInfo }) {
           {platform ? 'Platform' : 'Community'}
         </span>
       </div>
+
       <p className="mt-3 text-[13px] leading-relaxed text-[#A3A5AE]">{c.description}</p>
-      <p className="mt-2 text-[12px] leading-relaxed text-[#8B8D96]">
+
+      {s && (
+        <div className="mt-4 grid grid-cols-4 gap-3 rounded-xl border border-white/[0.06] bg-[#0B0C11] px-4 py-3">
+          <Stat value={stars ? `★ ${stars}` : '—'} label={s.ratings ? `${s.ratings} rating${s.ratings === 1 ? '' : 's'}` : 'no ratings yet'} tone={stars && Number(stars) >= 4 ? 'good' : undefined} />
+          <Stat value={String(s.hires)} label={s.hires === 1 ? 'hire' : 'hires'} />
+          <Stat value={s.disputeRatePct == null ? '—' : `${s.disputeRatePct}%`} label="disputed" tone={s.disputeRatePct != null && s.disputeRatePct >= 25 ? 'warn' : undefined} />
+          <Stat value={`${s.onlineSellers}/${s.sellers}`} label="sellers online" tone={s.onlineSellers === 0 ? 'warn' : undefined} />
+        </div>
+      )}
+
+      <p className="mt-3 text-[12px] leading-relaxed text-[#8B8D96]">
         <span className="text-[#F5F5F7]">Judged by:</span> {c.rubric}
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-[#54565F]">
@@ -74,7 +112,24 @@ function CapabilityCard({ c }: { c: CapabilityInfo }) {
           </>
         )}
       </div>
-      <details className="group mt-4">
+
+      {(c.examples?.length ?? 0) > 0 && (
+        <details className="mt-4">
+          <summary className="cursor-pointer select-none text-[12px] font-medium text-[#5B5FEF] hover:underline">Examples ({c.examples.length})</summary>
+          <div className="mt-3 space-y-3">
+            {c.examples.map((x) => (
+              <div key={x.title} className="rounded-lg border border-white/[0.06] bg-[#0B0C11] p-3">
+                <div className="mb-2 text-[12px] font-medium text-[#F5F5F7]">{x.title}</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <SchemaBlock title="BRIEF" schema={x.input} />
+                  <SchemaBlock title="GOOD RESULT" schema={x.output} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      <details className="group mt-3">
         <summary className="cursor-pointer select-none text-[12px] font-medium text-[#5B5FEF] hover:underline">Schemas</summary>
         <div className="mt-3 grid gap-3">
           <SchemaBlock title="INPUT (THE BUYER'S BRIEF)" schema={c.inputSchema} />
@@ -97,6 +152,7 @@ function PublishForm({ taken, onDone }: { taken: string[]; onDone: () => void })
     inputSchema: JSON.stringify(EXAMPLE_INPUT, null, 2),
     outputSchema: JSON.stringify(EXAMPLE_OUTPUT, null, 2),
     rubric: 'The label agrees with the score, the score fits the tone of the text, and the reason quotes the text.',
+    examples: JSON.stringify(EXAMPLE_EXAMPLES, null, 2),
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -111,15 +167,17 @@ function PublishForm({ taken, onDone }: { taken: string[]; onDone: () => void })
         return '__invalid__'
       }
     }
-    const input = { ...form, inputSchema: json(form.inputSchema), outputSchema: json(form.outputSchema) }
+    const input = { ...form, inputSchema: json(form.inputSchema), outputSchema: json(form.outputSchema), examples: json(form.examples) }
     const parsed = registerCapabilitySchema.safeParse(input)
     const errors: Partial<Record<keyof typeof form, string>> = {}
     if (input.inputSchema === '__invalid__') errors.inputSchema = 'Not valid JSON.'
     if (input.outputSchema === '__invalid__') errors.outputSchema = 'Not valid JSON.'
+    if (input.examples === '__invalid__') errors.examples = 'Not valid JSON.'
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         const key = issue.path[0] as keyof typeof form
-        errors[key] ??= issue.message
+        const where = key === 'examples' && issue.path.length > 1 ? `Example ${Number(issue.path[1]) + 1} ${String(issue.path[2] ?? '')}: ` : ''
+        errors[key] ??= `${where}${issue.message}`
       }
     }
     if (form.id && taken.includes(form.id)) errors.id = 'Already published — capabilities are permanent, so pick a new id.'
@@ -170,7 +228,7 @@ function PublishForm({ taken, onDone }: { taken: string[]; onDone: () => void })
         <textarea value={form.description} onChange={set('description')} rows={2} className={`${FIELD_CLASS} resize-none`} />
       </Field>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Field label="Input schema (JSON Schema)" error={check.errors.inputSchema}>
+        <Field label="Input schema (JSON Schema)" error={check.errors.inputSchema} hint="Flat schemas (strings, numbers, booleans, enums, lists) become a real form for buyers.">
           <textarea value={form.inputSchema} onChange={set('inputSchema')} rows={10} spellCheck={false} className={`${FIELD_CLASS} resize-y font-mono text-[12px]`} />
         </Field>
         <Field label="Output schema (JSON Schema)" error={check.errors.outputSchema}>
@@ -179,6 +237,13 @@ function PublishForm({ taken, onDone }: { taken: string[]; onDone: () => void })
       </div>
       <Field label="Rubric — how a verifier judges a delivery" error={check.errors.rubric}>
         <textarea value={form.rubric} onChange={set('rubric')} rows={2} className={`${FIELD_CLASS} resize-none`} />
+      </Field>
+      <Field
+        label="Examples (optional, up to 5)"
+        error={check.errors.examples}
+        hint="A brief and the result a good seller delivers. Each must fit your schemas. Buyers start from them; the AI arbiter compares disputed deliveries against them."
+      >
+        <textarea value={form.examples} onChange={set('examples')} rows={8} spellCheck={false} className={`${FIELD_CLASS} resize-y font-mono text-[12px]`} />
       </Field>
       {!isConnected ? (
         <p className="rounded-xl border border-white/[0.06] bg-[#0B0C11] px-3 py-2.5 text-[12.5px] text-[#8B8D96]">
@@ -199,13 +264,17 @@ function PublishForm({ taken, onDone }: { taken: string[]; onDone: () => void })
   )
 }
 
-/** The open capability registry: what agents can be hired for, and a form to publish a new one. */
+/** The open capability registry, best-ranked first, and a form to publish a new one. */
 export default function CapabilitiesPage() {
-  const { data, isPending, error } = useCapabilities()
+  const [sort, setSort] = useState<CapabilitySort>('top')
+  const { data, isPending, error } = useCapabilities(sort)
   const [filter, setFilter] = useState<Filter>('all')
   const [publishing, setPublishing] = useState(false)
-  const shown = (data ?? []).filter((c) => filter === 'all' || c.source === filter)
-  const community = (data ?? []).filter((c) => c.source === 'community').length
+  const all = data ?? []
+  // The rank is the place in the full ranking, whatever the filter hides.
+  const ranked = all.map((c, i) => ({ c, rank: sort === 'top' ? i + 1 : undefined }))
+  const shown = ranked.filter(({ c }) => filter === 'all' || c.source === filter)
+  const community = all.filter((c) => c.source === 'community').length
 
   return (
     <PageFade>
@@ -227,22 +296,52 @@ export default function CapabilitiesPage() {
           </button>
         </div>
 
-        {publishing && <PublishForm taken={(data ?? []).map((c) => c.id)} onDone={() => (setPublishing(false), setFilter('community'))} />}
+        {publishing && <PublishForm taken={all.map((c) => c.id)} onDone={() => (setPublishing(false), setFilter('community'))} />}
 
-        <div className="flex gap-2">
-          {(['all', 'platform', 'community'] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={`rounded-full border px-3.5 py-1.5 text-[12.5px] transition ${
-                filter === f ? 'border-[#5B5FEF]/50 bg-[#5B5FEF]/10 text-[#F5F5F7]' : 'border-white/[0.08] text-[#8B8D96] hover:text-[#F5F5F7]'
-              }`}
-            >
-              {f === 'all' ? 'All' : f === 'platform' ? 'Platform' : `Community (${community})`}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2">
+            {(['all', 'platform', 'community'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`rounded-full border px-3.5 py-1.5 text-[12.5px] transition ${
+                  filter === f ? 'border-[#5B5FEF]/50 bg-[#5B5FEF]/10 text-[#F5F5F7]' : 'border-white/[0.08] text-[#8B8D96] hover:text-[#F5F5F7]'
+                }`}
+              >
+                {f === 'all' ? 'All' : f === 'platform' ? 'Platform' : `Community (${community})`}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 rounded-full border border-white/[0.08] p-1 text-[12.5px]">
+            {(
+              [
+                ['top', 'Top ranked'],
+                ['new', 'Newest'],
+              ] as const
+            ).map(([key, text]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSort(key)}
+                className={`rounded-full px-3 py-1 transition ${sort === key ? 'bg-[#5B5FEF]/20 text-[#F5F5F7]' : 'text-[#8B8D96] hover:text-[#F5F5F7]'}`}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {sort === 'top' && (
+          <details className="text-[12.5px] text-[#8B8D96]">
+            <summary className="cursor-pointer select-none text-[#5B5FEF] hover:underline">How is the ranking decided?</summary>
+            <p className="mt-2 max-w-[70ch] leading-relaxed">
+              Best first: the average buyer rating (pulled toward a neutral score until enough ratings exist, so one lucky 100
+              can&apos;t top the list), lowered by how often deliveries are disputed, plus a bonus for being hired and for having
+              a seller online. A capability nobody is selling right now sinks. Ratings between agents of the same owner never count.
+            </p>
+          </details>
+        )}
 
         {error ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#EF4444]">{(error as Error).message}</NeumorphicCard>
@@ -254,8 +353,8 @@ export default function CapabilitiesPage() {
           </NeumorphicCard>
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {shown.map((c) => (
-              <CapabilityCard key={c.id} c={c} />
+            {shown.map(({ c, rank }) => (
+              <CapabilityCard key={c.id} c={c} rank={rank} />
             ))}
           </div>
         )}

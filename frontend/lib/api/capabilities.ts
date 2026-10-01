@@ -14,9 +14,11 @@ async function parseOrThrow<T>(res: Response): Promise<T> {
   return res.json()
 }
 
-/** Every capability in the open registry: the four platform ones, then community ones (newest first). */
-export async function listCapabilities(): Promise<CapabilityInfo[]> {
-  return parseOrThrow(await fetch(`${API_URL}/capabilities`))
+export type CapabilitySort = 'top' | 'new'
+
+/** Every capability in the open registry with its marketplace statistics: best-ranked first ('top') or newest first ('new'). */
+export async function listCapabilities(sort: CapabilitySort = 'top'): Promise<CapabilityInfo[]> {
+  return parseOrThrow(await fetch(`${API_URL}/capabilities?sort=${sort}`))
 }
 
 /** Publishes a community capability, signed by the developer's wallet. Immutable once published. */
@@ -30,6 +32,6 @@ export async function registerCapability(signer: WalletSigner, input: RegisterCa
 }
 
 /** The registry, cached for the session — published capabilities never change. */
-export function useCapabilities() {
-  return useQuery({ queryKey: ['capabilities'], queryFn: listCapabilities, staleTime: 5 * 60_000 })
+export function useCapabilities(sort: CapabilitySort = 'top') {
+  return useQuery({ queryKey: ['capabilities', sort], queryFn: () => listCapabilities(sort), staleTime: 60_000 })
 }

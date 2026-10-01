@@ -37,6 +37,18 @@ const jsonSchemaObject = z
     if (!compiled.ok) ctx.addIssue({ code: 'custom', message: compiled.error })
   })
 
+/** A worked example: a brief and the result a good seller delivers for it. */
+export const capabilityExampleSchema = z.object({
+  title: z.string().trim().min(3).max(80),
+  input: z.record(z.string(), z.unknown()),
+  output: z.record(z.string(), z.unknown()),
+})
+
+export type CapabilityExample = z.infer<typeof capabilityExampleSchema>
+
+export const MAX_EXAMPLES = 5
+const MAX_EXAMPLE_CHARS = 2_000
+
 export const registerCapabilitySchema = z.object({
   id: z
     .string()
@@ -48,6 +60,26 @@ export const registerCapabilitySchema = z.object({
   inputSchema: jsonSchemaObject,
   outputSchema: jsonSchemaObject,
   rubric: z.string().trim().min(10).max(1000),
+  /**
+   * Worked examples. Each input must fit the input schema and each output the
+   * output schema, so an example can never contradict the capability. Buyers
+   * use them to write a brief; the AI arbiter reads them as references of a
+   * correct delivery when a dispute is judged.
+   */
+  examples: z.array(capabilityExampleSchema).max(MAX_EXAMPLES).default([]),
+}).superRefine((cap, ctx) => {
+  cap.examples.forEach((example, i) => {
+    for (const side of ['input', 'output'] as const) {
+      if (JSON.stringify(example[side]).length > MAX_EXAMPLE_CHARS) {
+        ctx.addIssue({ code: 'custom', path: ['examples', i, side], message: `is larger than ${MAX_EXAMPLE_CHARS} characters` })
+        continue
+      }
+      const checked = validateWithSchema(side === 'input' ? cap.inputSchema : cap.outputSchema, example[side])
+      if (!checked.ok) {
+        ctx.addIssue({ code: 'custom', path: ['examples', i, side], message: `does not match the ${side} schema (${checked.error})` })
+      }
+    }
+  })
 })
 
 export type RegisterCapabilityInput = z.input<typeof registerCapabilitySchema>
@@ -61,6 +93,10 @@ export interface CapabilityInfo {
   inputSchema: Record<string, unknown>
   outputSchema: Record<string, unknown>
   rubric: string
+  /** Worked examples (community capabilities); the buyer's starting point and the arbiter's reference. */
+  examples: CapabilityExample[]
+  /** Marketplace statistics and the ranking score (listing only). */
+  stats?: CapabilityStats
   /** 'platform' = built in (hosted agents can run it); 'community' = published through the registry. */
   source: 'platform' | 'community'
   /** Who published it (community capabilities only). */
@@ -132,7 +168,53 @@ export function platformCapabilities(): CapabilityInfo[] {
       inputSchema: z.toJSONSchema(c.input, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>,
       outputSchema: z.toJSONSchema(c.output, { unrepresentable: 'any' }) as Record<string, unknown>,
       rubric: c.rubric,
+      examples: [],
       source: 'platform' as const,
     }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Statistics and ranking
+// ---------------------------------------------------------------------------
+
+/** How a capability is doing in the marketplace (see backend/src/capabilityStats.ts). */
+export interface CapabilityStats {
+  sellers: number
+  onlineSellers: number
+  /** Escrows created for it. */
+  hires: number
+  /** Results delivered. */
+  delivered: number
+  disputes: number
+  /** Buyer ratings counted (same-owner ratings excluded). */
+  ratings: number
+  /** Average rating 0–100, or null with none. */
+  avgRating: number | null
+  /** Disputes as a share of deliveries, or null before the first delivery. */
+  disputeRatePct: number | null
+  /** The ranking score; higher is better. */
+  score: number
+}
+
+/** A neutral rating every capability starts from, worth this many real ratings. */
+const PRIOR_RATING = 70
+const PRIOR_WEIGHT = 3
+
+/**
+ * The ranking score, in three plain parts:
+ *
+ *   quality      the average rating, pulled toward a neutral 70 until enough
+ *                real ratings exist (so one lucky 100 can't top the list)
+ *   reliability  quality × (1 − half the dispute rate): disputes cost points
+ *   bonuses      +10·log10(1 + hires) for being used, +5 when a seller is online,
+ *                −20 when none is (nobody can fulfil it right now)
+ *
+ * Top of the list = rated well, rarely disputed, actually used, and available.
+ */
+export function rankScore(stats: Omit<CapabilityStats, 'score'>, ratingSum: number): number {
+  const quality = (ratingSum + PRIOR_RATING * PRIOR_WEIGHT) / (stats.ratings + PRIOR_WEIGHT)
+  const disputeRate = stats.delivered ? Math.min(1, stats.disputes / stats.delivered) : 0
+  const score = quality * (1 - 0.5 * disputeRate) + 10 * Math.log10(1 + stats.hires) + (stats.onlineSellers > 0 ? 5 : -20)
+  return Math.round(score * 10) / 10
 }

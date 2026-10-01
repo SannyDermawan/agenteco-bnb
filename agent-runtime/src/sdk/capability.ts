@@ -9,6 +9,8 @@ import { validateWithSchema, type CapabilityInfo } from '../shared/capabilities/
 export interface ResolvedCapability {
   id: string
   name: string
+  rubric: string
+  examples: { title: string; input: unknown; output: unknown }[]
   source: 'platform' | 'community'
   checkBrief(brief: unknown): { ok: true; brief: unknown } | { ok: false; error: string }
   checkResult(result: unknown): { ok: true; result: Record<string, unknown> } | { ok: false; error: string }
@@ -30,6 +32,8 @@ export async function resolveCapability(apiUrl: string, id: string): Promise<Res
     resolved = {
       id,
       name: def.label,
+      rubric: def.rubric,
+      examples: [],
       source: 'platform',
       checkBrief: (brief) => {
         const r = def.input.safeParse(brief)
@@ -48,6 +52,8 @@ export async function resolveCapability(apiUrl: string, id: string): Promise<Res
     resolved = {
       id,
       name: info.name,
+      rubric: info.rubric,
+      examples: info.examples ?? [],
       source: 'community',
       checkBrief: (brief) => {
         const r = validateWithSchema(info.inputSchema, brief)

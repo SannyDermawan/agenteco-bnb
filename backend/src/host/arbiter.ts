@@ -118,6 +118,7 @@ async function recommend(escrow: EscrowBasic, disputedAt: number): Promise<void>
             capability: task.capability,
             label: capability.name,
             rubric: capability.rubric,
+            examples: capability.examples,
             brief: task.brief,
             criteria: task.criteria,
             result: JSON.parse(result.resultJson),

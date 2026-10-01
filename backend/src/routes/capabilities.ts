@@ -13,8 +13,8 @@ import { CUSTOM_CAPABILITY_ID, registerCapabilitySchema } from '../../../agent-r
  */
 export const capabilitiesRouter = Router()
 
-capabilitiesRouter.get('/', async (_req, res) => {
-  res.json(await listCapabilities())
+capabilitiesRouter.get('/', async (req, res) => {
+  res.json(await listCapabilities(req.query.sort === 'new' ? 'new' : 'top'))
 })
 
 capabilitiesRouter.get('/:id', async (req, res) => {
@@ -43,6 +43,7 @@ capabilitiesRouter.post('/', async (req, res) => {
       ...parsed.data,
       inputSchema: parsed.data.inputSchema as Prisma.InputJsonValue,
       outputSchema: parsed.data.outputSchema as Prisma.InputJsonValue,
+      examples: parsed.data.examples as Prisma.InputJsonValue,
       ownerWallet: auth.wallet.toLowerCase(),
     },
   })

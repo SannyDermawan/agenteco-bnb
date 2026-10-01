@@ -8,7 +8,8 @@
     "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "tsx --env-file=.env src/index.ts",
     "typecheck": "tsc --noEmit -p .",
-    "sentiment": "tsx --env-file=.env src/sentiment.ts"
+    "sentiment": "tsx --env-file=.env src/sentiment.ts",
+    "translator": "tsx --env-file=.env src/translator.ts"
   },
   "dependencies": {
     "viem": "^2.56.8"

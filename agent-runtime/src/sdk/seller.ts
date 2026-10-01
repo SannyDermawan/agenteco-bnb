@@ -14,6 +14,7 @@ import { getEscrowResult, publishEscrowResult } from '../resultsClient.ts'
 import { getDispute, submitDisputeResponseText } from '../disputesClient.ts'
 import { SELLER_RESPONSE_WINDOW_SECONDS } from '../durations.ts'
 import { resolveCapability } from './capability.ts'
+import { defendWithAi, runPlatformJob, type AiModel } from './ai.ts'
 import { DEFAULT_API_URL, type Logger, consoleLogger, sleep } from './common.ts'
 
 /** One paid job, handed to your code once the escrow is funded and the brief checks out. */
@@ -60,6 +61,17 @@ export interface SellerAgentOptions {
    * crypto_market_brief, tx_explainer).
    */
   handle?: (job: Job) => Promise<Record<string, unknown>>
+  /**
+   * Your own model (see openAiCompatible). AgentEco gives self-hosted agents no AI:
+   * with one, a platform capability is served by the same prompts AgentEco's hosted
+   * sellers use, running on YOUR model and key, and disputes are answered by it too
+   * (unless you pass respondToDispute). Without one, a platform capability delivers
+   * only its code-computed part, marked "AI unavailable" — and translation, which
+   * has no code-only result, cannot be sold at all.
+   */
+  ai?: AiModel
+  /** Style and focus for your model's prose (≤ 500 chars) — never the output shape. */
+  instructions?: string
   /** Answer a buyer's dispute (≤ 1000 characters). Return null to stay silent. */
   respondToDispute?: (ctx: DisputeContext) => Promise<string | null>
   /** How often to poll for negotiations and escrows. Default 3000 ms. */
@@ -111,9 +123,18 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
   if (!options.handle && !isCapabilityId(options.capability)) {
     throw new Error(`"${options.capability}" is a community capability — pass a handle(job) that produces its result.`)
   }
+  if (!options.handle && !options.ai && options.capability === 'translation') {
+    throw new Error('Translation needs a model: pass ai (e.g. openAiCompatible(...)) or a handle(job).')
+  }
+  if (!options.handle && !options.ai) {
+    log(`no ai and no handle: "${options.capability}" will deliver only its code-computed part, marked "AI unavailable"`)
+  }
 
   let agentId: string | null = null
   let running = false
+  /** Failed attempts per escrow: a model or handler that keeps failing is not retried forever (each try may cost money). */
+  const attempts = new Map<bigint, number>()
+  const MAX_ATTEMPTS = 3
   /** Escrows with nothing left to do. Every step is idempotent against on-chain status, so a restart just re-checks. */
   const finished = new Set<bigint>()
   /** Results whose on-chain hash is committed, kept until the API has the plaintext. */
@@ -179,8 +200,8 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
         return null
       }
       job.prepared = prepared.job
-      if (!options.handle && !codeOnlyResult(prepared.job)) {
-        log(`escrow #${escrowId}: "${task.capability}" needs a handle() — not taking it`)
+      if (!options.handle && !options.ai && !codeOnlyResult(prepared.job)) {
+        log(`escrow #${escrowId}: "${task.capability}" needs a model or a handle() — not taking it`)
         return null
       }
     }
@@ -188,7 +209,18 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
   }
 
   async function work(job: Job): Promise<Record<string, unknown>> {
-    const raw = options.handle ? await options.handle(job) : codeOnlyResult(job.prepared!)!
+    let raw: Record<string, unknown> | null = null
+    if (options.handle) {
+      raw = await options.handle(job)
+    } else {
+      if (options.ai) raw = await runPlatformJob(job.prepared!, options.ai, { criteria: job.criteria, instructions: options.instructions, log })
+      // The model failed or never answered validly: the code-computed part still goes out, like a hosted seller.
+      if (!raw) {
+        raw = codeOnlyResult(job.prepared!)
+        if (!raw) throw new Error(`${job.capability} needs the model, and it did not answer`)
+        log(`escrow #${job.escrowId}: the model did not answer — delivering the code-computed result only`)
+      }
+    }
     const capability = await resolveCapability(apiUrl, job.capability)
     const checked = capability.checkResult(raw)
     if (!checked.ok) throw new Error(`the result does not match the ${job.capability} output schema: ${checked.error}`)
@@ -198,7 +230,7 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
 
   /** Once per dispute, inside the response window: the job and result come from the API, so this survives restarts. */
   async function answerDispute(escrowId: bigint): Promise<void> {
-    if (!options.respondToDispute) return
+    if (!options.respondToDispute && !options.ai) return
     const [{ disputeResponseHash }, info] = await Promise.all([getEscrowHashes(onchain, escrowId), getEscrowDisputeInfo(onchain, escrowId)])
     if (disputeResponseHash !== ZERO_HASH) return
     if (Math.floor(Date.now() / 1000) > Number(info.disputedAt) + SELLER_RESPONSE_WINDOW_SECONDS) return
@@ -209,7 +241,19 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
     ])
     if (!task || !delivered) return
     const job: Job = { escrowId, capability: task.capability, brief: task.brief, criteria: task.criteria, price: task.price, buyer: task.buyer }
-    const text = await options.respondToDispute({ escrowId, job, result: delivered.result, reason: dispute?.reason || null })
+    const reason = dispute?.reason || null
+    let text: string | null
+    if (options.respondToDispute) {
+      text = await options.respondToDispute({ escrowId, job, result: delivered.result, reason })
+    } else {
+      const capability = await resolveCapability(apiUrl, task.capability)
+      text = await defendWithAi(
+        options.ai!,
+        { capability: task.capability, label: capability.name, rubric: capability.rubric, examples: capability.examples, brief: task.brief, criteria: task.criteria, result: delivered.result },
+        reason ?? 'The buyer gave no reason.',
+        log
+      )
+    }
     if (!text?.trim()) return
     const response = text.trim().slice(0, 1000)
     await submitDisputeResponse(onchain, escrowId, textHash(response))
@@ -256,7 +300,14 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
       try {
         if (await advance(id)) finished.add(id)
       } catch (error) {
-        log(`escrow #${id} failed this cycle — will retry (${(error as Error).message})`)
+        const n = (attempts.get(id) ?? 0) + 1
+        attempts.set(id, n)
+        if (n >= MAX_ATTEMPTS) {
+          finished.add(id)
+          log(`escrow #${id} failed ${n} times (${(error as Error).message}) — giving up; the contract's timeout refunds the buyer`)
+        } else {
+          log(`escrow #${id} failed this cycle — will retry (${(error as Error).message})`)
+        }
       }
     }
   }
