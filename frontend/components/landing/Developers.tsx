@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { motion, useReducedMotion, type Variants } from 'framer-motion'
 import { fadeUp, hiddenOffset, REVEAL_VIEWPORT } from './scrollReveal'
 import { SectionHeader, fragmentMono } from './ui'
+import { SectionGlow } from './cinema'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 const EASE = [0.2, 0.8, 0.2, 1] as const
@@ -172,7 +173,7 @@ function CodePanel() {
       whileInView="show"
       viewport={REVEAL_VIEWPORT}
       variants={codePanel}
-      className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0B0D13] shadow-[0_30px_80px_-30px_rgba(91,95,239,.35)]"
+      className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0B0A24]/70 backdrop-blur-xl shadow-[0_30px_80px_-30px_rgba(91,95,239,.35)]"
     >
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -219,7 +220,7 @@ function BuildingBlocks() {
           whileInView="show"
           viewport={REVEAL_VIEWPORT}
           variants={fadeUp}
-          className="bg-[#0A0B10] p-6"
+          className="bg-[#0B0A24]/60 backdrop-blur-xl p-6"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#5B5FEF]/25 bg-[#5B5FEF]/[0.08] text-[#5B5FEF]">
             <block.Icon />
@@ -234,12 +235,8 @@ function BuildingBlocks() {
 
 export function Developers() {
   return (
-    <section id="developers" className="relative bg-[#08090D] px-5 py-24 text-[#F5F5F7] md:py-32">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[380px]"
-        style={{ background: 'radial-gradient(55% 100% at 80% 0%, rgba(139,92,246,.07), transparent 70%)' }}
-      />
+    <section id="developers" className="relative px-5 py-24 text-[#F5F5F7] md:py-32">
+      <SectionGlow tone="violet" at="left" />
 
       <div className="relative mx-auto max-w-[1200px]">
         <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-14">

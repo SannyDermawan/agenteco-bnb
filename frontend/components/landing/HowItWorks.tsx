@@ -1,17 +1,10 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import {
-  motion,
-  animate,
-  useInView,
-  useMotionValue,
-  useTransform,
-  useMotionValueEvent,
-  useReducedMotion,
-} from 'framer-motion'
+import { useRef, useState } from 'react'
+import { motion, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform } from 'framer-motion'
 import { NegotiationSimulator } from './NegotiationSimulator'
 import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { SectionHeader, fragmentMono } from './ui'
+import { SectionGlow } from './cinema'
 
 const BLUE = '#5B5FEF'
 const VIOLET = '#B45AE1'
@@ -60,7 +53,7 @@ const STAGES: Stage[] = [
 function NumberBadge({ stage, active }: { stage: Stage; active: boolean }) {
   return (
     <div
-      className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-[#08090D] text-[14px] font-semibold tracking-[-0.01em] transition-colors duration-300"
+      className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-[#0A0B1E] text-[14px] font-semibold tracking-[-0.01em] transition-colors duration-300"
       style={{
         borderColor: active ? `${stage.accent}80` : 'rgba(255,255,255,0.14)',
         color: active ? stage.accent : '#A3A5AE',
@@ -92,34 +85,25 @@ function StageText({ stage, centered }: { stage: Stage; centered: boolean }) {
 function DesktopPipeline() {
   const reduceMotion = useReducedMotion()
   const pipelineRef = useRef<HTMLDivElement>(null)
-  const isInView = useInView(pipelineRef, { margin: '-100px' })
-  const [activeIndex, setActiveIndex] = useState(0)
+  const [activeIndex, setActiveIndex] = useState(-1)
 
-  const progress = useMotionValue(0)
-
-  useEffect(() => {
-    if (reduceMotion || !isInView) return
-    const controls = animate(progress, 1, { duration: 5, ease: 'linear', repeat: Infinity })
-    return () => controls.stop()
-  }, [reduceMotion, isInView, progress])
-
-  const fillOpacity = useTransform(progress, [0, 0.04, 0.96, 1], [0, 1, 1, 0])
+  // The line fills as the pipeline scrolls up the screen, so the money moves at your pace.
+  const { scrollYProgress } = useScroll({ target: pipelineRef, offset: ['start 85%', 'start 30%'] })
+  const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 24 })
   const dotLeft = useTransform(progress, [0, 1], ['10%', '90%'])
   const dotColor = useTransform(progress, [0, 0.5, 1], [BLUE, VIOLET, GREEN])
 
   useMotionValueEvent(progress, 'change', (v) => {
     const lastIndex = STAGES.length - 1
-    // Floor gives each badge an exact "reached" threshold — but the last one needs v to
-    // hit exactly 1, which the looping animation rarely samples before resetting, so it
-    // gets a small near-the-end tolerance instead of requiring the exact boundary value.
-    setActiveIndex(v >= 0.99 ? lastIndex : Math.floor(v * lastIndex))
+    // Each badge lights once the dot reaches it; the last one with a little tolerance.
+    setActiveIndex(v < 0.01 ? -1 : v >= 0.98 ? lastIndex : Math.floor(v * lastIndex))
   })
 
   return (
     <div ref={pipelineRef} className="relative mt-16 hidden md:block">
       <div aria-hidden className="pointer-events-none absolute left-[10%] right-[10%] top-[24px] h-px bg-white/10" />
       {!reduceMotion ? (
-        <motion.div aria-hidden className="pointer-events-none absolute inset-0" style={{ opacity: fillOpacity }}>
+        <motion.div aria-hidden className="pointer-events-none absolute inset-0">
           <motion.div
             className="absolute left-[10%] right-[10%] top-[24px] h-px origin-left"
             style={{ scaleX: progress, background: `linear-gradient(90deg, ${BLUE}, ${VIOLET} 60%, ${GREEN})` }}
@@ -187,12 +171,8 @@ function MobileTimeline() {
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="relative bg-[#08090D] px-5 py-24 text-[#F5F5F7] md:py-32">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[380px]"
-        style={{ background: 'radial-gradient(55% 100% at 50% 0%, rgba(91,95,239,.05), transparent 70%)' }}
-      />
+    <section id="how-it-works" className="relative px-5 py-24 text-[#F5F5F7] md:py-32">
+      <SectionGlow tone="amber" at="right" />
 
       <div className="relative mx-auto max-w-[1200px]">
         <SectionHeader

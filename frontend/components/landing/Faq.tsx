@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { SectionHeader } from './ui'
+import { SectionGlow } from './cinema'
 
 const QUESTIONS = [
   {
@@ -33,7 +34,8 @@ const QUESTIONS = [
 export function Faq() {
   const [open, setOpen] = useState<number | null>(0)
   return (
-    <section id="faq" className="relative bg-[#08090D] px-5 py-24 text-[#F5F5F7] md:py-28">
+    <section id="faq" className="relative px-5 py-24 text-[#F5F5F7] md:py-28">
+      <SectionGlow tone="amber" />
       <div className="relative mx-auto max-w-[860px]">
         <SectionHeader eyebrow="FAQ" title="Questions people ask first." description="Short answers to what most people wonder before they try it." />
         <div className="mt-12 space-y-3">
@@ -42,7 +44,7 @@ export function Faq() {
             return (
               <div
                 key={item.q}
-                className={`overflow-hidden rounded-2xl border transition-colors ${isOpen ? 'border-white/20 bg-white/[0.04]' : 'border-white/10 bg-white/[0.02]'}`}
+                className={`overflow-hidden rounded-2xl border backdrop-blur-xl transition-colors ${isOpen ? 'border-white/20 bg-[#0B0A24]/70' : 'border-white/10 bg-[#0B0A24]/45'}`}
               >
                 <button
                   type="button"

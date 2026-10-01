@@ -5,12 +5,13 @@ import { Fragment_Mono } from 'next/font/google'
 import { BuyerArt } from './BuyerAgent'
 import { SellerArt } from './SellerAgent'
 import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
+import { WordReveal } from './cinema'
 
 export const fragmentMono = Fragment_Mono({ subsets: ['latin'], weight: '400' })
 
 /** Landing palette — body copy is a notch brighter than the app's #8B8D96 so it survives a projector. */
 export const C = {
-  bg: '#08090D',
+  bg: '#0A0B1E',
   panel: '#0D0F16',
   primary: '#F5F5F7',
   body: '#A3A5AE',
@@ -45,20 +46,14 @@ export function SectionHeader({
         variants={fadeUp}
         className="inline-flex items-center gap-2 text-xs font-medium tracking-[0.18em] text-[#A3A5AE]"
       >
-        <i className="h-1.5 w-1.5 rounded-full bg-[#5B5FEF] shadow-[0_0_10px_#5B5FEF]" />
+        <i className="h-1.5 w-1.5 rounded-full bg-[#FFB45A] shadow-[0_0_10px_#FFB45A]" />
         {eyebrow}
       </motion.div>
-      <motion.h2
-        custom={1}
-        initial="hidden"
-        whileInView="show"
-        viewport={REVEAL_VIEWPORT}
-        variants={fadeUp}
-        className="mt-4 text-balance text-[clamp(28px,3.6vw,44px)] font-semibold leading-[1.12] tracking-[-0.03em] text-[#F5F5F7]"
+      <WordReveal
+        text={title}
+        className="mt-4 text-balance text-[clamp(30px,4.2vw,54px)] font-semibold leading-[1.08] tracking-[-0.035em] text-[#F5F5F7]"
         style={{ fontFamily: 'var(--font-geist-sans)' }}
-      >
-        {title}
-      </motion.h2>
+      />
       <motion.p
         custom={2}
         initial="hidden"
@@ -86,18 +81,6 @@ export function RobotAvatar({ role, size = 36 }: { role: 'buyer' | 'seller'; siz
     >
       <Art style={{ width: size * 1.25, height: size * 1.25, marginTop: size * 0.12 }} />
     </span>
-  )
-}
-
-/** Thin gradient seam between sections, so the page has visible rhythm instead of one flat #08090D. */
-export function SectionSeam() {
-  return (
-    <div aria-hidden className="relative h-px w-full bg-[#08090D]">
-      <div
-        className="absolute inset-x-0 top-0 mx-auto h-px max-w-[1200px]"
-        style={{ background: 'linear-gradient(90deg, transparent, rgba(91,95,239,.35), rgba(139,92,246,.35), transparent)' }}
-      />
-    </div>
   )
 }
 

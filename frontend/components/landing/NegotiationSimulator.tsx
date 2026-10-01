@@ -1,13 +1,13 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { motion, useReducedMotion } from 'framer-motion'
+import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { simulateNegotiation, type SimResult, type SimRound } from '@/lib/negotiationSim'
 import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { RobotAvatar, formatUsdt, fragmentMono } from './ui'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
-const STEP_MS = 650
+const STEP_MS = 1500
 
 function Slider({
   label,
@@ -46,24 +46,46 @@ function Slider({
   )
 }
 
-function Bubble({ round }: { round: SimRound }) {
+// Each round carries a short reason, as in the app: the AI writes a line with every offer.
+// These are fixed lines for the demo — they never mention either side's limit.
+const SELLER_COUNTER = [
+  'Based on the scope and market rates, I can offer {p}.',
+  'My costs leave little room — {p} is a fair middle.',
+  'I can move a bit more: {p}, close to my best.',
+]
+const BUYER_COUNTER = [
+  'A fair price for the brief that keeps the cost low.',
+  'I can stretch a little further, to {p}.',
+  'Meeting you closer at {p} — that is nearly my ceiling.',
+]
+
+function reasonFor(round: SimRound, index: number): string {
+  const p = `${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
+  const pool = round.side === 'seller' ? SELLER_COUNTER : BUYER_COUNTER
+  switch (round.action) {
+    case 'offer':
+      return 'Opening offer'
+    case 'counter':
+      return pool[Math.floor((index - 1) / 2) % pool.length].replace('{p}', p)
+    case 'accept':
+      return round.side === 'seller' ? `Happy with that — deal at ${p}.` : `Within my budget — deal at ${p}.`
+    case 'reject':
+      return 'The gap is too wide for me to close.'
+  }
+}
+
+function Bubble({ round, index }: { round: SimRound; index: number }) {
   const buyer = round.side === 'buyer'
-  const text =
-    round.action === 'offer'
-      ? `Offers ${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
-      : round.action === 'counter'
-        ? `Counters ${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
-        : round.action === 'accept'
-          ? `Accepts ${formatUsdt(round.price)} ${TOKEN_SYMBOL}`
-          : 'Walks away — out of range'
+  const label = { offer: 'Offer', counter: 'Counter', accept: 'Accepted', reject: 'Walks away' }[round.action]
   const tone =
     round.action === 'accept'
-      ? 'border border-[#22A06B]/40 bg-[#22A06B]/10 text-[#22A06B]'
+      ? 'border-[#22A06B]/40 bg-[#22A06B]/10'
       : round.action === 'reject'
-        ? 'border border-[#EF4444]/35 bg-[#EF4444]/10 text-[#F87171]'
+        ? 'border-[#EF4444]/35 bg-[#EF4444]/10'
         : buyer
-          ? 'bg-[#4F7CFF]/12 text-[#F5F5F7]'
-          : 'bg-[#8B5CF6]/14 text-[#F5F5F7]'
+          ? 'border-[#4F7CFF]/30 bg-[#4F7CFF]/10'
+          : 'border-[#8B5CF6]/30 bg-[#8B5CF6]/10'
+  const priceTone = round.action === 'accept' ? 'text-[#22C55E]' : round.action === 'reject' ? 'text-[#F87171]' : 'text-[#F5F5F7]'
   return (
     <motion.div
       layout
@@ -73,7 +95,15 @@ function Bubble({ round }: { round: SimRound }) {
       className={`flex items-end gap-2.5 ${buyer ? '' : 'flex-row-reverse'}`}
     >
       <RobotAvatar role={round.side} size={32} />
-      <div className={`rounded-2xl px-3.5 py-2 text-[13.5px] ${buyer ? 'rounded-bl-md' : 'rounded-br-md'} ${tone}`}>{text}</div>
+      <div className={`max-w-[82%] rounded-2xl border px-3.5 py-2.5 ${buyer ? 'rounded-bl-md' : 'rounded-br-md'} ${tone}`}>
+        <div className="flex items-baseline gap-2">
+          <span className={`text-[14.5px] font-semibold ${priceTone}`}>
+            {formatUsdt(round.price)} {TOKEN_SYMBOL}
+          </span>
+          <span className="text-[12px] text-[#A3A5AE]">{label}</span>
+        </div>
+        <div className="mt-0.5 text-[12.5px] leading-snug text-[#A3A5AE]">{reasonFor(round, index)}</div>
+      </div>
     </motion.div>
   )
 }
@@ -83,29 +113,30 @@ function Bubble({ round }: { round: SimRound }) {
  * outcome. Remounted (via `key`) whenever the inputs change or on Replay, so
  * it always starts from the first round.
  */
-function Playback({ result, listedPrice }: { result: SimResult; listedPrice: number }) {
+function Playback({ result, listedPrice, play }: { result: SimResult; listedPrice: number; play: boolean }) {
   const reduce = useReducedMotion()
   const rounds = result.kind === 'skipped' ? NO_ROUNDS : result.rounds
   const [shown, setShown] = useState(reduce ? rounds.length : 0)
 
   useEffect(() => {
-    if (reduce) return
-    const timers = rounds.map((_, i) => setTimeout(() => setShown(i + 1), 250 + i * STEP_MS))
+    // Hold still until the card is on screen, so the visitor sees it start.
+    if (reduce || !play) return
+    const timers = rounds.map((_, i) => setTimeout(() => setShown(i + 1), 400 + i * STEP_MS))
     return () => timers.forEach(clearTimeout)
-  }, [rounds, reduce])
+  }, [rounds, reduce, play])
 
   const finished = shown >= rounds.length
 
   return (
     <>
-      <div className="mt-5 flex-1 space-y-3" aria-live="polite">
+      <div className="mt-5 flex-1 space-y-3" aria-live="polite" style={{ minHeight: rounds.length * 78 }}>
         {result.kind === 'skipped' ? (
-          <p className="rounded-xl border border-white/10 bg-[#0D0F16] p-4 text-[13.5px] leading-relaxed text-[#A3A5AE]">
+          <p className="rounded-xl border border-white/10 bg-white/[0.05] p-4 text-[13.5px] leading-relaxed text-[#A3A5AE]">
             Even the buyer&apos;s opening offer (50% of the seller&apos;s price) is above its max budget, so it never
             opens a negotiation with this seller — it looks for another one instead.
           </p>
         ) : (
-          rounds.slice(0, shown).map((r, i) => <Bubble key={i} round={r} />)
+          rounds.slice(0, shown).map((r, i) => <Bubble key={i} round={r} index={i} />)
         )}
       </div>
 
@@ -116,7 +147,7 @@ function Playback({ result, listedPrice }: { result: SimResult; listedPrice: num
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
             className={`flex flex-wrap items-center gap-3 rounded-2xl border p-4 ${
-              result.kind === 'deal' ? 'border-[#22A06B]/35 bg-[#22A06B]/[0.07]' : 'border-white/10 bg-[#0D0F16]'
+              result.kind === 'deal' ? 'border-[#22A06B]/35 bg-[#22A06B]/[0.07]' : 'border-white/10 bg-white/[0.05]'
             }`}
           >
             {result.kind === 'deal' ? (
@@ -152,6 +183,9 @@ export function NegotiationSimulator() {
   const [sellerFloor, setSellerFloor] = useState(0.24)
   const [buyerBudget, setBuyerBudget] = useState(1)
   const [runId, setRunId] = useState(0)
+  // The negotiation plays when this pane is scrolled into view, not when the page loads.
+  const paneRef = useRef<HTMLDivElement>(null)
+  const seen = useInView(paneRef, { once: true, amount: 0.45 })
 
   const floor = Math.min(sellerFloor, sellerPrice)
   const result = useMemo(
@@ -166,7 +200,7 @@ export function NegotiationSimulator() {
       whileInView="show"
       viewport={REVEAL_VIEWPORT}
       variants={fadeUp}
-      className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0B0C12]"
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0B0A24]/70 backdrop-blur-xl"
     >
       <div
         aria-hidden
@@ -202,7 +236,7 @@ export function NegotiationSimulator() {
           </div>
         </div>
 
-        <div className="flex min-h-[420px] flex-col p-6 md:p-8">
+        <div ref={paneRef} className="flex min-h-[420px] flex-col p-6 md:p-8">
           <div className="flex items-center justify-between">
             <span className={`text-[11px] tracking-[0.16em] text-[#7C7E87] ${fragmentMono.className}`}>NEGOTIATION</span>
             <button
@@ -219,6 +253,7 @@ export function NegotiationSimulator() {
             key={`${runId}-${sellerPrice}-${floor}-${buyerBudget}`}
             result={result}
             listedPrice={sellerPrice}
+            play={seen}
           />
         </div>
       </div>

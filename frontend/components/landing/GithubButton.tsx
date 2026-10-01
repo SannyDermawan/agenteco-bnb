@@ -1,4 +1,4 @@
-const REPO_URL = 'https://github.com/SannyDermawan/agenteco'
+const REPO_URL = 'https://github.com/SannyDermawan/agenteco-bnb'
 
 function GithubIcon({ className }: { className?: string }) {
   return (

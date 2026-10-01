@@ -9,23 +9,21 @@ import { GithubButton } from "@/components/landing/GithubButton";
 import { Roles } from "@/components/landing/Roles";
 import { Proof } from "@/components/landing/Proof";
 import { Faq } from "@/components/landing/Faq";
-import { SectionSeam } from "@/components/landing/ui";
+import { Capabilities } from "@/components/landing/Capabilities";
+import { WorldBackdrop } from "@/components/landing/WorldBackdrop";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#08090D] text-[#F5F5F7]">
+    <main className="relative min-h-screen bg-[#0A0B1E] text-[#F5F5F7]">
+      <WorldBackdrop />
       <Navbar />
       <Hero />
       <Product />
-      <SectionSeam />
+      <Capabilities />
       <Roles />
-      <SectionSeam />
       <HowItWorks />
-      <SectionSeam />
       <Proof />
-      <SectionSeam />
       <Developers />
-      <SectionSeam />
       <Faq />
       <FinalCta />
       <Footer />
