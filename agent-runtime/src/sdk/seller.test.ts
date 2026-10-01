@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { generatePrivateKey } from 'viem/accounts'
-import { createSellerAgent, type SellerAgentOptions } from './seller.ts'
+import { MAX_ATTEMPTS, createSellerAgent, retryDecision, type SellerAgentOptions } from './seller.ts'
 import type { AiModel } from './ai.ts'
 
 const base = (capability: string): SellerAgentOptions => ({
@@ -36,4 +36,17 @@ test('a community capability still needs its own handler; an AI alone is not eno
   assert.throws(() => createSellerAgent(base('sentiment_score')), /community capability/)
   assert.throws(() => createSellerAgent({ ...base('sentiment_score'), ai }), /community capability/)
   assert.doesNotThrow(() => createSellerAgent({ ...base('sentiment_score'), handle }))
+})
+
+test('a failing job pauses longer each time, then is dropped', () => {
+  // 5 s, 10 s, 20 s, 40 s: about 75 s of retries — a briefly rate-limited model recovers, a dead one costs 5 calls.
+  assert.deepEqual(
+    [1, 2, 3, 4].map((n) => retryDecision(n, false)),
+    [5_000, 10_000, 20_000, 40_000].map((waitMs) => ({ giveUp: false, waitMs }))
+  )
+  assert.deepEqual(retryDecision(MAX_ATTEMPTS, false), { giveUp: true })
+})
+
+test('once the on-chain deadline for the step has passed, the job is dropped at once', () => {
+  assert.deepEqual(retryDecision(1, true), { giveUp: true })
 })

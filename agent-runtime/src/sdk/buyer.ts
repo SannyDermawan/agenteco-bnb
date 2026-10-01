@@ -6,7 +6,7 @@ import { countOffersBySide, isMyTurn, listNegotiationsForAgent, openNegotiation,
 import { attachEscrowToOrder, listOrdersForAgent } from '../ordersClient.ts'
 import { hireWithTask } from '../tasksClient.ts'
 import { createOnchainClients } from '../onchain/clients.ts'
-import { acceptAndSettle, getEscrowHashes, getEscrowStatus, raiseDispute, rateSeller } from '../onchain/escrow.ts'
+import { acceptAndSettle, getEscrowHashes, getEscrowStatus, getEscrowTimestamps, getEscrowWindows, raiseDispute, rateSeller } from '../onchain/escrow.ts'
 import { getEscrowResult } from '../resultsClient.ts'
 import { submitDisputeReason } from '../disputesClient.ts'
 import { hashPreimage, textHash } from '../shared/hashes.ts'
@@ -60,7 +60,8 @@ export interface HireResult {
   seller: { id: string; name: string; wallet: string }
   /** The agreed price. */
   price: string
-  result: Record<string, unknown>
+  /** The delivered result; null when the seller committed a hash but never published the result. */
+  result: Record<string, unknown> | null
   /** settled = paid; disputed = the arbiter (or the dispute timeout) decides. */
   outcome: 'settled' | 'disputed'
 }
@@ -175,8 +176,22 @@ export async function hire(options: HireOptions): Promise<HireResult> {
     if (status === REFUNDED) throw new Error(`Escrow #${escrowId} was refunded — the seller did not take or finish the job.`)
     await waitStep(`escrow #${escrowId} to be delivered`)
   }
+  const sellerInfo = { id: seller.id, name: seller.name, wallet: seller.walletAddress }
+
+  // The plaintext must follow the hash. A seller that never publishes it gets half the review
+  // window, then a dispute — like a hosted buyer. Waiting longer would let the window run out,
+  // and the contract would then pay the seller for a result nobody could check.
+  const [{ deliveredAt }, { reviewWindow }] = await Promise.all([getEscrowTimestamps(onchain, escrowId), getEscrowWindows(onchain, escrowId)])
+  const publishBy = Number(deliveredAt + reviewWindow / BigInt(2)) * 1000
   let published = await getEscrowResult(apiUrl, escrowId.toString(), account)
   while (!published) {
+    if (Date.now() >= publishBy) {
+      const reason = 'The seller committed a result hash on-chain but never published a result that matches it, so the delivery could not be checked.'
+      await raiseDispute(onchain, escrowId, textHash(reason))
+      await submitDisputeReason(apiUrl, account, escrowId.toString(), reason)
+      log(`escrow #${escrowId}: the seller never published its result — disputed`)
+      return { escrowId, seller: sellerInfo, price, result: null, outcome: 'disputed' }
+    }
     await waitStep(`the result of escrow #${escrowId}`)
     published = await getEscrowResult(apiUrl, escrowId.toString(), account)
   }
@@ -215,7 +230,6 @@ export async function hire(options: HireOptions): Promise<HireResult> {
     review = { accept: true }
   }
 
-  const sellerInfo = { id: seller.id, name: seller.name, wallet: seller.walletAddress }
   if (!review.accept) {
     const reason = review.reason.trim()
     if (reason.length < 10) throw new Error('A dispute reason needs at least 10 characters.')

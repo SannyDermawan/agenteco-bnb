@@ -194,3 +194,14 @@ export async function getEscrowTimestamps(clients: Pick<OnchainClients, 'publicC
   })
   return { createdAt, fundedAt, executingAt, deliveredAt, settledAt }
 }
+
+/** getEscrowWindows: the negotiated windows, and their deadlines (0 until execution / delivery started). */
+export async function getEscrowWindows(clients: Pick<OnchainClients, 'publicClient'>, escrowId: bigint) {
+  const [executionWindow, reviewWindow, executionDeadline, reviewDeadline] = await clients.publicClient.readContract({
+    address: agentEcoFor(escrowId),
+    abi: AGENT_ECO_ABI,
+    functionName: 'getEscrowWindows',
+    args: [escrowId],
+  })
+  return { executionWindow, reviewWindow, executionDeadline, reviewDeadline }
+}

@@ -4,7 +4,7 @@ import { AGENT_ECO_ADDRESS, RPC_URL } from '../network.ts'
 import { registerOrSyncSelf } from '../registryClient.ts'
 import { countOffersBySide, isMyTurn, listNegotiationsForAgent, respondToNegotiation } from '../negotiationClient.ts'
 import { createOnchainClients } from '../onchain/clients.ts'
-import { getEscrowDisputeInfo, getEscrowHashes, getEscrowStatus, markDelivered, startExecution, submitDisputeResponse } from '../onchain/escrow.ts'
+import { getEscrowDisputeInfo, getEscrowHashes, getEscrowStatus, getEscrowWindows, markDelivered, startExecution, submitDisputeResponse } from '../onchain/escrow.ts'
 import { readAllEscrows } from '../onchain/escrowIndex.ts'
 import { hashPreimage, resultHash, textHash } from '../shared/hashes.ts'
 import { isCapabilityId } from '../shared/capabilities/definitions.ts'
@@ -96,6 +96,22 @@ const SETTLED = 5
 const REFUNDED = 6
 const ZERO_HASH = `0x${'0'.repeat(64)}`
 
+/** Tries per escrow before a failing job is dropped (each try may cost a model call). */
+export const MAX_ATTEMPTS = 5
+const FIRST_PAUSE_MS = 5_000
+const MAX_PAUSE_MS = 60_000
+
+/**
+ * What to do after a job failed `failures` times in a row: pause and retry —
+ * 5 s, then 10, 20, 40 (capped at 60), so a briefly rate-limited model has
+ * time to recover — or give up, after MAX_ATTEMPTS failures or as soon as the
+ * on-chain deadline for the step has passed (no retry can help then).
+ */
+export function retryDecision(failures: number, deadlinePassed: boolean): { giveUp: true } | { giveUp: false; waitMs: number } {
+  if (deadlinePassed || failures >= MAX_ATTEMPTS) return { giveUp: true }
+  return { giveUp: false, waitMs: Math.min(MAX_PAUSE_MS, FIRST_PAUSE_MS * 2 ** (failures - 1)) }
+}
+
 /**
  * A self-hosted seller agent in a few lines: it lists itself in the
  * marketplace, haggles within your floor, and for every funded escrow naming
@@ -129,9 +145,8 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
 
   let agentId: string | null = null
   let running = false
-  /** Failed attempts per escrow: a model or handler that keeps failing is not retried forever (each try may cost money). */
-  const attempts = new Map<bigint, number>()
-  const MAX_ATTEMPTS = 3
+  /** Escrows whose last try failed: when the next try may run, and how many failed in a row (see retryDecision). */
+  const retries = new Map<bigint, { failures: number; nextTryAt: number }>()
   /** Escrows with nothing left to do. Every step is idempotent against on-chain status, so a restart just re-checks. */
   const finished = new Set<bigint>()
   /** Results whose on-chain hash is committed, kept until the API has the plaintext. */
@@ -202,8 +217,8 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
   }
 
   async function work(job: Job): Promise<Record<string, unknown>> {
-    // No fallback: when the model never answers, nothing is delivered (the error is retried a few
-    // times, then dropped, and the contract's timeout refunds the buyer).
+    // No fallback: when the model never answers, nothing is delivered. The job is retried with
+    // growing pauses (see retryDecision), then dropped, and the contract's timeout refunds the buyer.
     const raw = options.handle
       ? await options.handle(job)
       : await runPlatformJob(job.prepared!, options.ai!, { criteria: job.criteria, instructions: options.instructions, log })
@@ -288,18 +303,37 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
       (e) => e.seller.toLowerCase() === account.address.toLowerCase() && !finished.has(e.id)
     )
     for (const { id } of mine) {
+      const retry = retries.get(id)
+      if (retry && Date.now() < retry.nextTryAt) continue
       try {
         if (await advance(id)) finished.add(id)
+        retries.delete(id)
       } catch (error) {
-        const n = (attempts.get(id) ?? 0) + 1
-        attempts.set(id, n)
-        if (n >= MAX_ATTEMPTS) {
+        const failures = (retry?.failures ?? 0) + 1
+        const decision = retryDecision(failures, await stepDeadlinePassed(id))
+        const why = (error as Error).message
+        if (decision.giveUp) {
           finished.add(id)
-          log(`escrow #${id} failed ${n} times (${(error as Error).message}) — giving up; the contract's timeout refunds the buyer`)
+          retries.delete(id)
+          log(`escrow #${id} failed ${failures} time(s) (${why}) — giving up; the contract's timeout refunds the buyer`)
         } else {
-          log(`escrow #${id} failed this cycle — will retry (${(error as Error).message})`)
+          retries.set(id, { failures, nextTryAt: Date.now() + decision.waitMs })
+          log(`escrow #${id} failed (${why}) — retrying in ${Math.round(decision.waitMs / 1000)}s`)
         }
       }
+    }
+  }
+
+  /** Whether the on-chain deadline for this escrow's current step is over: then no retry can help. */
+  async function stepDeadlinePassed(escrowId: bigint): Promise<boolean> {
+    try {
+      const now = BigInt(Math.floor(Date.now() / 1000))
+      const status = await getEscrowStatus(onchain, escrowId)
+      if (status === FUNDED) return now > (await getEscrowDisputeInfo(onchain, escrowId)).acceptDeadline
+      if (status === EXECUTING) return now > (await getEscrowWindows(onchain, escrowId)).executionDeadline
+      return false
+    } catch {
+      return false // the chain read failed too: let the attempt cap decide
     }
   }
 

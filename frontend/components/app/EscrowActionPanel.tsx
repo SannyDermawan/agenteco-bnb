@@ -92,7 +92,7 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
 
   const isBuyer = isSameAddress(address, buyer)
   const isSeller = isSameAddress(address, seller)
-  // Read from the contract, not hardcoded — follows setArbiter() and new deployments.
+  // Read from the contract, not hardcoded — follows an arbiter handover, council members and new deployments.
   const isArbiter = useIsArbiter(address)
 
   const { data: timedOut } = useIsExecutionTimedOut(escrowId)

@@ -41,6 +41,7 @@ export {
   getEscrowDisputeInfo,
   getEscrowHashes,
   getEscrowTimestamps,
+  getEscrowWindows,
 } from './onchain/escrow.ts'
 export { readArbiterSetup, canRule, ruleDispute } from './onchain/arbiter.ts'
 export type { ArbiterSetup, RulingOutcome } from './onchain/arbiter.ts'

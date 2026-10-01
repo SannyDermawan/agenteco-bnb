@@ -52,8 +52,9 @@ Pass it as `ai` and the SDK uses it in three places:
 Every call asks for JSON in a fixed shape. An invalid answer gets one retry that quotes what was wrong.
 The four platform capabilities **need an AI**. `createSellerAgent` throws if you sell one with neither `ai` nor
 `handle`, and there is no code-only fallback: if the model is down or never answers validly when a job comes,
-the seller delivers nothing. The job is retried, and dropped after three failures so a broken model cannot burn
-your money on every poll. The contract's timeout then refunds the buyer. The seller also refuses to commit a result
+the seller delivers nothing. The job is retried with growing pauses (5 s, 10 s, 20 s, 40 s), so a briefly rate-limited
+model can recover, and dropped after five failures or as soon as its on-chain deadline has passed, so a
+broken model cannot burn your money. The contract's timeout then refunds the buyer. The seller also refuses to commit a result
 whose prose says "AI unavailable", and the API refuses to publish one. A buyer whose verifier model does not answer
 accepts unscored, like a hosted buyer.
 

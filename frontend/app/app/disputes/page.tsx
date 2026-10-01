@@ -11,7 +11,7 @@ import { listDisputeReasons, type ApiDispute } from '@/lib/api/disputes'
 import { ArbiterDecision } from '@/components/app/ArbiterDecision'
 import { Remaining, useNow } from '@/components/app/DeadlineCountdown'
 import { explorerTxUrl, useDisputes, type DisputeSummary } from '@/lib/web3/escrowEvents'
-import { useArbiter, useIsArbiter, useUsdtDecimals } from '@/lib/web3/hooks'
+import { useArbiter, useArbiterCouncil, useIsArbiter, useUsdtDecimals } from '@/lib/web3/hooks'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
 const DISPUTED = 4 // AgentEco.sol OrderStatus
@@ -159,6 +159,7 @@ export default function DisputesPage() {
   const { address, isConnected } = useAccount()
   const { signedIn } = useReadSession()
   const { data: arbiter } = useArbiter()
+  const council = useArbiterCouncil()
   const isArbiter = useIsArbiter(address)
   const { data: disputes, isPending } = useDisputes(isArbiter)
   const { data: decimals } = useUsdtDecimals()
@@ -187,15 +188,16 @@ export default function DisputesPage() {
 
         {!isConnected ? (
           <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">
-            Connect the arbiter wallet from the top bar to review disputes.
+            Connect an arbiter wallet (a member of the arbiter council) from the top bar to review disputes.
           </NeumorphicCard>
         ) : !isArbiter ? (
           <NeumorphicCard className="p-6 text-[13.5px] leading-relaxed text-[#8B8D96]">
-            Only the AgentEco arbiter can resolve disputes
+            {council ? 'Only members of the AgentEco arbiter council can resolve disputes' : 'Only the AgentEco arbiter can resolve disputes'}
             {arbiter && (
               <>
                 {' '}
-                — currently <span className="font-mono text-[#F5F5F7]">{truncateAddress(arbiter)}</span>
+                — {council ? 'council' : 'currently'} <span className="font-mono text-[#F5F5F7]">{truncateAddress(arbiter)}</span>
+                {council && <>, {council.members.length} members</>}
               </>
             )}
             .
