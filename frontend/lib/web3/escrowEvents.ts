@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { usePublicClient } from 'wagmi'
 import { decodeEventLog, toHex, type Address, type Hash, type Hex } from 'viem'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS } from './abi'
+import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, LEGACY_AGENT_ECO_ADDRESS, agentEcoFor } from './abi'
 import { appChain } from './chain'
 import { DEPLOY_BLOCK, LOG_HISTORY_BLOCKS, LOG_RANGE } from './network'
 
@@ -44,21 +44,31 @@ export interface EscrowBasic {
 
 const MULTICALL_BATCH = 200
 
+async function idsOn(client: PublicClient, address: Address, first: bigint, cap?: bigint): Promise<bigint[]> {
+  const next = await client.readContract({ address, abi: AGENT_ECO_ABI, functionName: 'nextEscrowId' })
+  const end = cap !== undefined && cap < next ? cap : next
+  const ids: bigint[] = []
+  for (let id = first; id < end; id++) ids.push(id)
+  return ids
+}
+
 /**
- * Every escrow on the contract, from state: ids run 1..nextEscrowId-1 and each
- * is read through getEscrowBasic (batched with Multicall3). No event logs, so
- * it keeps working after the RPC prunes history.
+ * Every escrow, from contract state: v1's ids 1..1000 (still read there), then
+ * v2's from FIRST_ESCROW_ID; each is read through getEscrowBasic (batched with
+ * Multicall3). No event logs, so it keeps working after the RPC prunes history.
  */
 async function readAllEscrows(client: PublicClient): Promise<EscrowBasic[]> {
-  const next = await client.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'nextEscrowId' })
-  const ids: bigint[] = []
-  for (let id = BigInt(1); id < next; id++) ids.push(id)
+  const [legacy, current] = await Promise.all([
+    LEGACY_AGENT_ECO_ADDRESS ? idsOn(client, LEGACY_AGENT_ECO_ADDRESS, BigInt(1), FIRST_ESCROW_ID) : Promise.resolve([]),
+    idsOn(client, AGENT_ECO_ADDRESS, FIRST_ESCROW_ID),
+  ])
+  const ids = [...legacy, ...current]
 
   const out: EscrowBasic[] = []
   for (let i = 0; i < ids.length; i += MULTICALL_BATCH) {
     const chunk = ids.slice(i, i + MULTICALL_BATCH)
     const calls = chunk.map((id) => ({
-      address: AGENT_ECO_ADDRESS,
+      address: agentEcoFor(id),
       abi: AGENT_ECO_ABI,
       functionName: 'getEscrowBasic' as const,
       args: [id] as const,
@@ -137,8 +147,8 @@ export function useDisputes(enabled: boolean) {
       const details = await Promise.all(
         escrows.map(async (e) => {
           const [info, hashes] = await Promise.all([
-            client!.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowDisputeInfo', args: [e.escrowId] }),
-            client!.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [e.escrowId] }),
+            client!.readContract({ address: agentEcoFor(e.escrowId), abi: AGENT_ECO_ABI, functionName: 'getEscrowDisputeInfo', args: [e.escrowId] }),
+            client!.readContract({ address: agentEcoFor(e.escrowId), abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [e.escrowId] }),
           ])
           return { e, disputedAt: info[0], disputeDeadline: info[1], resolutionHash: hashes[4] }
         })
@@ -223,7 +233,7 @@ export function useEscrowTxHashes(escrowId?: bigint) {
           method: 'eth_getLogs',
           params: [
             {
-              address: AGENT_ECO_ADDRESS,
+              address: agentEcoFor(escrowId!),
               fromBlock: toHex(fromBlock),
               toBlock: toHex(toBlock),
               topics: [null, toHex(escrowId!, { size: 32 })],

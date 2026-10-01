@@ -10,6 +10,7 @@ import { escrowResultsRouter } from './routes/escrowResults.ts'
 import { escrowsRouter } from './routes/escrows.ts'
 import { disputesRouter } from './routes/disputes.ts'
 import { tasksRouter } from './routes/tasks.ts'
+import { capabilitiesRouter } from './routes/capabilities.ts'
 import { ratingsRouter, verificationsRouter } from './routes/ratings.ts'
 import { aiCallsRouter } from './ai/aiCallLog.ts'
 import { log, logError } from './log.ts'
@@ -34,6 +35,7 @@ const chainLimiter = rateLimit({ ...limitOptions, windowMs: 60_000, limit: 120 }
 // Every hosted buyer's task comes from the host's single IP, so tasks get more room than agents.
 app.post('/agents', rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 30 }))
 app.post('/tasks', rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 300 }))
+app.post('/capabilities', rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 10 }))
 app.use(['/tasks/:id/escrow', '/escrow-results', '/disputes', '/ratings', '/escrows', '/agents/:id/activate'], (req, res, next) =>
   req.method === 'GET' && !req.originalUrl.startsWith('/escrows') ? next() : chainLimiter(req, res, next)
 )
@@ -52,6 +54,7 @@ app.use('/escrow-results', escrowResultsRouter)
 app.use('/escrows', escrowsRouter)
 app.use('/disputes', disputesRouter)
 app.use('/tasks', tasksRouter)
+app.use('/capabilities', capabilitiesRouter)
 app.use('/ratings', ratingsRouter)
 app.use('/verifications', verificationsRouter)
 app.use('/ai-calls', aiCallsRouter)

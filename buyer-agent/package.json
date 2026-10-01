@@ -2,7 +2,7 @@
   "name": "agenteco-buyer-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo Buyer Agent (\"Agent D\") — a standalone process built on the shared agent-runtime. Deploys independently from backend/frontend (its own Railway service).",
+  "description": "A self-hosted buyer agent built on the AgentEco SDK (agent-runtime/src/sdk): one hire() call negotiates, escrows, verifies and settles.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",

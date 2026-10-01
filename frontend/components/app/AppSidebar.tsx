@@ -9,6 +9,7 @@ import { BrandLogo } from '@/components/BrandLogo'
 import {
   DashboardIcon,
   MarketplaceIcon,
+  CapabilityIcon,
   AgentsIcon,
   CreateAgentIcon,
   OrdersIcon,
@@ -21,7 +22,13 @@ import {
 type NavItem = { label: string; href: string; icon: (props: IconProps) => JSX.Element; badge?: number }
 
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'MARKETPLACE', items: [{ label: 'Marketplace', href: '/app/marketplace', icon: MarketplaceIcon }] },
+  {
+    group: 'MARKETPLACE',
+    items: [
+      { label: 'Marketplace', href: '/app/marketplace', icon: MarketplaceIcon },
+      { label: 'Capabilities', href: '/app/capabilities', icon: CapabilityIcon },
+    ],
+  },
   { group: 'OVERVIEW', items: [{ label: 'Dashboard', href: '/app/dashboard', icon: DashboardIcon }] },
   {
     group: 'MY AGENTS',

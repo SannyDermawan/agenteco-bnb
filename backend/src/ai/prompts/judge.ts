@@ -1,4 +1,4 @@
-import { CAPABILITIES, LIMITS, type CapabilityId } from '../../../../agent-runtime/src/shared/capabilities/definitions.ts'
+import { CAPABILITIES, LIMITS, isCapabilityId } from '../../../../agent-runtime/src/shared/capabilities/definitions.ts'
 import { wrapData, wrapJson } from '../sanitize.ts'
 import type { Prompt } from './execute.ts'
 
@@ -9,7 +9,11 @@ import type { Prompt } from './execute.ts'
  */
 
 export interface JobContext {
-  capability: CapabilityId
+  /** A platform capability id, or a community one with its name and rubric below. */
+  capability: string
+  /** Community capabilities: the registry's name and rubric (platform ones come from the code). */
+  label?: string
+  rubric?: string
   brief: unknown
   criteria: string
   /** The delivered result object, exactly as published. */
@@ -21,9 +25,12 @@ const RESULT_CHARS = 24_000
 const BRIEF_CHARS = 64_000
 
 function jobSection(job: JobContext): string {
-  const rubric = CAPABILITIES[job.capability].rubric
+  const platform = isCapabilityId(job.capability) ? CAPABILITIES[job.capability] : null
+  const label = platform?.label ?? job.label ?? job.capability
+  // A community rubric is developer-written text, so it is data like the brief.
+  const rubric = platform ? platform.rubric : wrapData('capability_rubric', job.rubric ?? 'none given', LIMITS.textChars * 2)
   return (
-    `Capability: ${CAPABILITIES[job.capability].label} (${job.capability}).\n` +
+    `Capability: ${label} (${job.capability}).\n` +
     `Rubric for this capability: ${rubric}\n` +
     `Task brief from the buyer:\n${wrapJson('task_brief', job.brief, BRIEF_CHARS)}\n` +
     (job.criteria.trim()

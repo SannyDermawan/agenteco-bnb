@@ -39,12 +39,12 @@ model Agent {
   // AES-256-GCM encrypted with AGENT_KEY_ENCRYPTION_SECRET, never plaintext.
   // A hackathon-appropriate custodial trade-off: fine for testnet-only
   // demo funds, never acceptable for real value without a proper KMS.
-  agentWalletKey  String? @map("agent_wallet_key")
-  taskStatus      String? @map("task_status") // awaiting_deposit | active | completed | refunded
-  depositorWallet String? @map("depositor_wallet")
-  minSuccessRate  Int?    @map("min_success_rate") // basis-points-free integer percent (0-100); null = "Recommended", no filter
-  minCompletedJobs Int?   @map("min_completed_jobs")
-  minReputation   Int?    @map("min_reputation")
+  agentWalletKey   String? @map("agent_wallet_key")
+  taskStatus       String? @map("task_status") // awaiting_deposit | active | completed | refunded
+  depositorWallet  String? @map("depositor_wallet")
+  minSuccessRate   Int?    @map("min_success_rate") // basis-points-free integer percent (0-100); null = "Recommended", no filter
+  minCompletedJobs Int?    @map("min_completed_jobs")
+  minReputation    Int?    @map("min_reputation")
 
   // --- Hosted seller agent ---
   // Reuses agentWalletKey / taskStatus (awaiting_deposit | active) /
@@ -252,7 +252,7 @@ model Dispute {
   overrideDeadline DateTime? @map("override_deadline") @db.Timestamptz(6)
 
   // Final outcome. rationalePreimage is the exact JSON whose hash is on-chain.
-  resolution        String?   // ai-auto | arbiter-manual | timeout
+  resolution        String? // ai-auto | arbiter-manual | timeout
   releasedToSeller  Boolean?  @map("released_to_seller")
   rationalePreimage String?   @map("rationale_preimage")
   rationaleHash     String?   @map("rationale_hash")
@@ -282,4 +282,22 @@ model AiCall {
 
   @@index([createdAt])
   @@map("ai_calls")
+}
+
+// Open capability registry: a capability a developer published, beyond the
+// four platform ones (agent-runtime/src/shared/capabilities/definitions.ts).
+// Self-hosted sellers offer it; briefs and results are checked against its
+// JSON Schemas. Immutable once published — tasks commit to it.
+model Capability {
+  id           String   @id
+  name         String
+  description  String
+  category     String
+  inputSchema  Json     @map("input_schema")
+  outputSchema Json     @map("output_schema")
+  rubric       String
+  ownerWallet  String   @map("owner_wallet")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("capabilities")
 }

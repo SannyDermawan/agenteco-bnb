@@ -10,7 +10,7 @@ import { DeadlineCountdown } from '@/components/app/DeadlineCountdown'
 import { PageFade } from '@/components/app/PageFade'
 import { SessionGate } from '@/components/app/SessionGate'
 import { EscrowAccessGate } from '@/components/app/EscrowAccessGate'
-import { AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
+import { agentEcoFor } from '@/lib/web3/abi'
 import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { useEscrowBasic, useEscrowTimestamps, useReputation, useUsdtDecimals } from '@/lib/web3/hooks'
 import { useEscrowTxHashes } from '@/lib/web3/escrowEvents'
@@ -104,7 +104,7 @@ function OnChainOrder({ escrowIdParam }: { escrowIdParam: string }) {
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[13.5px] text-[#8B8D96]">
             <span>{amountFormatted} {TOKEN_SYMBOL}</span>
             <a
-              href={explorerAddressUrl(AGENT_ECO_ADDRESS)}
+              href={explorerAddressUrl(agentEcoFor(escrowId))}
               target="_blank"
               rel="noreferrer"
               className="text-[#5B5FEF] hover:underline"

@@ -5,7 +5,8 @@ import { READ_SESSION_HEADER } from '../../agent-runtime/src/shared/session.ts'
 import { AGENT_ECO_ABI } from './abi/agentEcoAbi.ts'
 import { verifyOwnerAuth, type AuthResult } from './auth.ts'
 import { prisma } from './db.ts'
-import { AGENT_ECO_ADDRESS, appChain, appTransport } from './network.ts'
+import { agentEcoFor, appChain, appTransport } from './network.ts'
+import { canRule, readArbiterSetup, type ArbiterSetup } from '../../agent-runtime/src/onchain/arbiter.ts'
 import { FRONTEND_HOSTS } from './origins.ts'
 import { verifyReadSession } from './session.ts'
 
@@ -51,23 +52,26 @@ export async function requireViewer(req: Request, res: Response): Promise<string
   return viewer
 }
 
-let arbiterPromise: Promise<string> | null = null
+let arbiterSetup: { at: number; setup: Promise<ArbiterSetup> } | null = null
+// The arbiter role can be handed over (and council members change by vote), so re-read now and then.
+const ARBITER_TTL_MS = 60_000
 
-/** The contract's arbiter (lowercase), read once. */
-export function getArbiter(): Promise<string> {
-  arbiterPromise ??= publicClient
-    .readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'arbiter' })
-    .then((address) => address.toLowerCase())
-    .catch((error) => {
-      arbiterPromise = null // retry on the next request
+/** The contract's arbiter: a wallet, or an ArbiterCouncil and its members. Cached for a minute. */
+export function getArbiterSetup(): Promise<ArbiterSetup> {
+  if (!arbiterSetup || Date.now() - arbiterSetup.at > ARBITER_TTL_MS) {
+    const setup = readArbiterSetup(publicClient as never).catch((error) => {
+      arbiterSetup = null // retry on the next request
       throw error
     })
-  return arbiterPromise
+    arbiterSetup = { at: Date.now(), setup }
+  }
+  return arbiterSetup.setup
 }
 
+/** The arbiter wallet itself, or any member of the arbiter council. */
 export async function isArbiter(viewer: string): Promise<boolean> {
   try {
-    return viewer === (await getArbiter())
+    return canRule(await getArbiterSetup(), viewer)
   } catch {
     return false
   }
@@ -98,7 +102,7 @@ export async function escrowParties(escrowId: string): Promise<EscrowParties | n
     parties = { buyer: task.buyer.toLowerCase(), seller: task.seller.toLowerCase() }
   } else {
     const [buyer, seller] = await publicClient.readContract({
-      address: AGENT_ECO_ADDRESS,
+      address: agentEcoFor(BigInt(escrowId)),
       abi: AGENT_ECO_ABI,
       functionName: 'getEscrowBasic',
       args: [BigInt(escrowId)],

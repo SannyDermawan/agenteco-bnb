@@ -2,7 +2,7 @@ import { getAbiItem, parseEventLogs, type Hex, type Log, type PublicClient } fro
 import { AGENT_ECO_ABI } from '../../agent-runtime/src/shared/abi.generated.ts'
 import { prisma } from './db.ts'
 import { log } from './log.ts'
-import { AGENT_ECO_ADDRESS, LOG_RANGE } from './network.ts'
+import { AGENT_ECO_ADDRESS, LOG_RANGE, isAgentEcoAddress } from './network.ts'
 
 /**
  * Ratings index (spec §10.3). The contract keeps only ratingSum/ratingCount
@@ -46,7 +46,7 @@ async function saveRating(args: SellerRatedArgs, txHash: string | null): Promise
 
 function sellerRatedIn(logs: Log[]): { args: SellerRatedArgs; txHash: string | null }[] {
   return parseEventLogs({ abi: AGENT_ECO_ABI, logs, eventName: 'SellerRated' })
-    .filter((l) => l.address.toLowerCase() === AGENT_ECO_ADDRESS.toLowerCase())
+    .filter((l) => isAgentEcoAddress(l.address))
     .map((l) => ({ args: l.args as SellerRatedArgs, txHash: l.transactionHash }))
 }
 

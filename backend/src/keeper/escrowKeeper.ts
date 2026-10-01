@@ -1,4 +1,5 @@
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
+import { agentEcoFor } from '../network.ts'
 import { readAllEscrows } from '../../../agent-runtime/src/onchain/escrowIndex.ts'
 import type { Clients } from '../clients.ts'
 import type { KeeperConfig } from '../config.ts'
@@ -35,7 +36,7 @@ async function submitKeeperTx(
     // Simulate first: catches a stale/ineligible escrow (e.g. someone
     // else's keeper already claimed it) before we spend gas.
     const { request } = await clients.publicClient.simulateContract({
-      address: config.agentEcoAddress,
+      address: agentEcoFor(escrowId),
       abi: AGENT_ECO_ABI,
       functionName,
       args: [escrowId],
@@ -67,7 +68,7 @@ async function processEscrow(clients: Clients, config: KeeperConfig, escrowId: b
     const flag = FLAG_FOR_STATUS[status]
     if (!flag) return
     const flagValue = await clients.publicClient.readContract({
-      address: config.agentEcoAddress,
+      address: agentEcoFor(escrowId),
       abi: AGENT_ECO_ABI,
       functionName: FLAG_READER[flag],
       args: [escrowId],

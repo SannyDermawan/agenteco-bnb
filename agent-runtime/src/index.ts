@@ -5,6 +5,10 @@ export {
   AGENT_ECO_ADDRESS,
   USDT_ADDRESS,
   DEPLOYMENT_BLOCK,
+  LEGACY_AGENT_ECO_ADDRESS,
+  FIRST_ESCROW_ID,
+  agentEcoFor,
+  isAgentEcoAddress,
   appChain,
   assertRpcMatchesNetwork,
 } from './network.ts'
@@ -38,9 +42,11 @@ export {
   getEscrowHashes,
   getEscrowTimestamps,
 } from './onchain/escrow.ts'
+export { readArbiterSetup, canRule, ruleDispute } from './onchain/arbiter.ts'
+export type { ArbiterSetup, RulingOutcome } from './onchain/arbiter.ts'
 export { onChainStatusLabel, ON_CHAIN_STATUS } from './onchain/abi.ts'
 export type { OnChainStatus } from './onchain/abi.ts'
-export { allEscrowIds, readAllEscrows, readEscrowBasics } from './onchain/escrowIndex.ts'
+export { allEscrowIds, currentEscrowIds, readAllEscrows, readCurrentEscrows, readEscrowBasics } from './onchain/escrowIndex.ts'
 export type { EscrowBasic } from './onchain/escrowIndex.ts'
 export { publishEscrowResult } from './resultsClient.ts'
 export type { EscrowResult } from './resultsClient.ts'

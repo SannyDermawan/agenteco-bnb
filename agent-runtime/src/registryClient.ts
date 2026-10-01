@@ -6,6 +6,8 @@ export interface RegistryAgent {
   id: string
   ownerWallet: string
   isOnline: boolean
+  role?: 'buyer' | 'seller'
+  name?: string
 }
 
 export interface RegisterOptions {
@@ -14,6 +16,11 @@ export interface RegisterOptions {
   account: LocalAccount
   /** On-chain payout wallet to advertise for this agent (sellers only, usually). */
   walletAddress?: string
+  /**
+   * False for a buyer that runs its own key (the SDK, buyer-agent/): it then needs no
+   * stored task brief, and may buy community capabilities. Only sent on registration.
+   */
+  hosted?: boolean
 }
 
 async function parseOrThrow(res: Response, action: string): Promise<any> {
@@ -24,11 +31,20 @@ async function parseOrThrow(res: Response, action: string): Promise<any> {
   return res.json()
 }
 
-/** Signed, so a buyer agent (listed only to its owner) finds itself too. */
-export async function findOwnAgent(apiUrl: string, owner: LocalAccount): Promise<RegistryAgent | null> {
+/**
+ * This wallet's own agent — of the given role, preferring the same name when
+ * it owns several. Signed, so a buyer agent (listed only to its owner) finds itself too.
+ */
+export async function findOwnAgent(
+  apiUrl: string,
+  owner: LocalAccount,
+  match: { role?: 'buyer' | 'seller'; name?: string } = {}
+): Promise<RegistryAgent | null> {
   const res = await fetch(`${apiUrl}/agents?ownerWallet=${owner.address}`, { headers: await buildAuthHeaders(owner) })
-  const agents: RegistryAgent[] = await parseOrThrow(res, 'Registry lookup')
-  return agents[0] ?? null
+  const agents: RegistryAgent[] = (await parseOrThrow(res, 'Registry lookup')).filter(
+    (a: RegistryAgent) => !match.role || !a.role || a.role === match.role
+  )
+  return agents.find((a) => match.name && a.name === match.name) ?? agents[0] ?? null
 }
 
 /** A seller's public profile — its negotiation limit and instructions are never shown to others. */
@@ -84,7 +100,7 @@ export async function registerOrSyncSelf(config: AgentConfig, options: RegisterO
     isOnline: true,
   }
 
-  const existing = await findOwnAgent(options.apiUrl, options.account)
+  const existing = await findOwnAgent(options.apiUrl, options.account, { role: config.role, name: config.name })
   const authHeaders = await buildAuthHeaders(options.account)
 
   if (existing) {
@@ -99,7 +115,7 @@ export async function registerOrSyncSelf(config: AgentConfig, options: RegisterO
   const res = await fetch(`${options.apiUrl}/agents`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(options.hosted === undefined ? payload : { ...payload, hosted: options.hosted }),
   })
   return parseOrThrow(res, 'Registry registration')
 }

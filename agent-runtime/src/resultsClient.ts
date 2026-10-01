@@ -1,8 +1,16 @@
+import type { LocalAccount } from 'viem'
+import { buildAuthHeaders } from './authHeaders.ts'
+
 export interface EscrowResult {
   id: string
   escrowId: string
   capability: string
   result: Record<string, unknown>
+  /**
+   * The exact JSON text whose hash is on-chain. `result` comes back from a
+   * jsonb column with its keys reordered, so re-hash this, never `result`.
+   */
+  resultJson?: string | null
   resultHash: string
   createdAt: string
 }
@@ -29,5 +37,17 @@ export async function publishEscrowResult(
     const body = await res.text()
     throw new Error(`Publishing escrow result failed (${res.status}): ${body}`)
   }
+  return res.json() as Promise<EscrowResult>
+}
+
+/**
+ * The published result behind an escrow, or null before the seller has
+ * published it. Private to the escrow's buyer, seller and arbiter, so the
+ * reader signs the request.
+ */
+export async function getEscrowResult(apiUrl: string, escrowId: string, reader: LocalAccount): Promise<EscrowResult | null> {
+  const res = await fetch(`${apiUrl}/escrow-results/${escrowId}`, { headers: await buildAuthHeaders(reader) })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Reading escrow result failed (${res.status}): ${await res.text()}`)
   return res.json() as Promise<EscrowResult>
 }

@@ -10,6 +10,7 @@ import { MenuIcon, WalletIcon } from './icons'
 const TITLES: Record<string, string> = {
   '/app/dashboard': 'Dashboard',
   '/app/marketplace': 'Marketplace',
+  '/app/capabilities': 'Capabilities',
   '/app/agents': 'My Agents',
   '/app/create-agent': 'Create Agent',
   '/app/orders': 'Orders',

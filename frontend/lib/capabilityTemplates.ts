@@ -20,7 +20,17 @@ export const CAPABILITY_TEMPLATES: CapabilityTemplate[] = CAPABILITY_IDS.map((id
   description: CAPABILITIES[id].description,
 }))
 
-/** "data_analysis" → "Data Analysis"; unknown ids are returned as-is. */
+/**
+ * "data_analysis" → "Data Analysis". Community capabilities (open registry)
+ * get their id title-cased: "sentiment_score" → "Sentiment Score".
+ */
 export function capabilityLabel(id: string): string {
-  return CAPABILITY_TEMPLATES.find((t) => t.key === id)?.label ?? id
+  return (
+    CAPABILITY_TEMPLATES.find((t) => t.key === id)?.label ??
+    id
+      .split('_')
+      .filter(Boolean)
+      .map((w) => w[0].toUpperCase() + w.slice(1))
+      .join(' ')
+  )
 }

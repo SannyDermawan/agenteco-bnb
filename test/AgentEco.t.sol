@@ -41,7 +41,7 @@ abstract contract AgentEcoBase is Test {
     function _deploy(uint8 decimals) internal {
         vm.warp(1_700_000_000);
         token = new TestToken(decimals);
-        eco = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT);
+        eco = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
         amount = 25 * 10 ** (decimals - 2); // 0.25 USDT
         token.mint(buyer, 1_000 * 10 ** decimals);
         vm.prank(buyer);
@@ -120,34 +120,34 @@ contract AgentEcoTest is AgentEcoBase {
 
     function test_constructor_rejectsZeroToken() public {
         vm.expectRevert("Invalid USDT address");
-        new AgentEco(address(0), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT);
+        new AgentEco(address(0), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
     }
 
     function test_constructor_rejectsZeroArbiter() public {
         vm.expectRevert("Invalid arbiter");
-        new AgentEco(address(token), address(0), MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT);
+        new AgentEco(address(token), address(0), MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
     }
 
     function test_constructor_rejectsZeroMinWindow() public {
         vm.expectRevert("Invalid min window");
-        new AgentEco(address(token), arbiter, 0, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT);
+        new AgentEco(address(token), arbiter, 0, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
     }
 
     function test_constructor_rejectsAcceptTimeoutBelowMinWindow() public {
         vm.expectRevert("Invalid accept timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, MIN_WINDOW - 1, DISPUTE_TIMEOUT);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, MIN_WINDOW - 1, DISPUTE_TIMEOUT, 1);
     }
 
     function test_constructor_rejectsDisputeTimeoutBelowMinWindow() public {
         vm.expectRevert("Invalid dispute timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, MIN_WINDOW - 1);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, MIN_WINDOW - 1, 1);
     }
 
     function test_constructor_rejectsTimeoutsAboveMaxWindow() public {
         vm.expectRevert("Invalid accept timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, 90 days + 1, DISPUTE_TIMEOUT);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, 90 days + 1, DISPUTE_TIMEOUT, 1);
         vm.expectRevert("Invalid dispute timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, 90 days + 1);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, 90 days + 1, 1);
     }
 
     // ------------------------------------------------------------------
@@ -652,7 +652,7 @@ contract AgentEcoTest is AgentEcoBase {
         eco.refundEscrow(id);
         vm.prank(stranger);
         vm.expectRevert("Only arbiter");
-        eco.setArbiter(stranger);
+        eco.transferArbiter(stranger);
     }
 
     function test_unknownEscrowReverts() public {
@@ -674,11 +674,96 @@ contract AgentEcoTest is AgentEcoBase {
         assertTrue(eco.isDisputeTimedOut(disputed));
     }
 
-    function test_setArbiter_handsOverRole() public {
+    // ------------------------------------------------------------------
+    // Two-step arbiter handover
+    // ------------------------------------------------------------------
+
+    event ArbiterTransferStarted(address indexed currentArbiter, address indexed pendingArbiter);
+    event ArbiterUpdated(address indexed previousArbiter, address indexed newArbiter);
+
+    function test_arbiterHandover_twoSteps() public {
+        address next = makeAddr("next");
+        vm.expectEmit(true, true, false, false);
+        emit ArbiterTransferStarted(arbiter, next);
+        vm.prank(arbiter);
+        eco.transferArbiter(next);
+        // Nothing changes until the new arbiter accepts.
+        assertEq(eco.arbiter(), arbiter);
+        assertEq(eco.pendingArbiter(), next);
+
+        vm.expectEmit(true, true, false, false);
+        emit ArbiterUpdated(arbiter, next);
+        vm.prank(next);
+        eco.acceptArbiter();
+        assertEq(eco.arbiter(), next);
+        assertEq(eco.pendingArbiter(), address(0));
+
+        // The old arbiter has lost the role.
+        uint256 id = _disputed();
+        vm.prank(arbiter);
+        vm.expectRevert("Only arbiter");
+        eco.resolveDisputeForSeller(id, RATIONALE);
+        vm.prank(next);
+        eco.resolveDisputeForSeller(id, RATIONALE);
+        assertEq(_status(id), SETTLED);
+    }
+
+    function test_arbiterHandover_onlyPendingCanAccept() public {
+        vm.prank(stranger);
+        vm.expectRevert("Only pending arbiter");
+        eco.acceptArbiter(); // nobody pending
+
         address next = makeAddr("next");
         vm.prank(arbiter);
-        eco.setArbiter(next);
-        assertEq(eco.arbiter(), next);
+        eco.transferArbiter(next);
+        vm.prank(stranger);
+        vm.expectRevert("Only pending arbiter");
+        eco.acceptArbiter();
+    }
+
+    function test_arbiterHandover_canBeCancelledOrRedirected() public {
+        address typo = makeAddr("typo");
+        address next = makeAddr("next");
+        vm.startPrank(arbiter);
+        eco.transferArbiter(typo);
+        eco.transferArbiter(next); // corrected before anyone accepted
+        vm.stopPrank();
+        vm.prank(typo);
+        vm.expectRevert("Only pending arbiter");
+        eco.acceptArbiter();
+
+        vm.prank(arbiter);
+        eco.transferArbiter(address(0)); // cancel
+        vm.prank(next);
+        vm.expectRevert("Only pending arbiter");
+        eco.acceptArbiter();
+        assertEq(eco.arbiter(), arbiter);
+    }
+
+    // ------------------------------------------------------------------
+    // firstEscrowId: continuing an older deployment's numbering
+    // ------------------------------------------------------------------
+
+    function test_firstEscrowId_continuesNumbering() public {
+        AgentEco v2 = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1000);
+        assertEq(v2.firstEscrowId(), 1000);
+        assertEq(v2.nextEscrowId(), 1000);
+        vm.prank(buyer);
+        uint256 id = v2.createEscrow(seller, amount, EXEC_WINDOW, REVIEW_WINDOW, TASK);
+        assertEq(id, 1000);
+        assertEq(v2.nextEscrowId(), 1001);
+        vm.expectRevert("Escrow does not exist");
+        v2.getEscrowBasic(999);
+    }
+
+    function test_constructor_rejectsZeroFirstEscrowId() public {
+        vm.expectRevert("Invalid first escrow id");
+        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 0);
+    }
+
+    function test_version() public view {
+        assertEq(eco.VERSION(), "2");
+        assertEq(eco.firstEscrowId(), 1);
     }
 
     // ------------------------------------------------------------------

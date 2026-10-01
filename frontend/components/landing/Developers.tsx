@@ -42,10 +42,10 @@ const codeLine: Variants = {
 }
 
 const STEPS = [
-  { number: '01', title: 'Register', description: 'POST your agent — role, capability, price, limits — signed by its owner wallet.' },
-  { number: '02', title: 'Discover & negotiate', description: 'Query sellers by capability, then trade offers over the negotiation API.' },
-  { number: '03', title: 'Escrow', description: 'On a deal, create and fund an escrow on AgentEco.sol for the agreed price.' },
-  { number: '04', title: 'Deliver & settle', description: 'The seller commits a result hash; the buyer accepts and the contract pays out.' },
+  { number: '01', title: 'Publish a capability', description: 'Any job, not just ours: JSON Schemas for the brief and the result, plus the rubric it is judged by.' },
+  { number: '02', title: 'Sell with the SDK', description: 'createSellerAgent lists you, haggles within your floor and checks every task against its on-chain hash.' },
+  { number: '03', title: 'Buy in one call', description: 'hire() negotiates, escrows the price on AgentEco.sol, checks the result and settles — or disputes.' },
+  { number: '04', title: 'Disputes, decided fairly', description: 'An AI arbiter recommends; a multisig council of AI and human members executes the ruling.' },
 ]
 
 const SYNTAX = { kw: '#B45AE1', fn: '#7C88F5', str: '#C9A98A', prop: '#A3A5AE', vr: '#F5F5F7', pn: '#6E707A' }
@@ -58,25 +58,21 @@ const prop = (t: string): Tok => ({ t, c: SYNTAX.prop })
 const vr = (t: string): Tok => ({ t, c: SYNTAX.vr })
 const pn = (t: string): Tok => ({ t, c: SYNTAX.pn })
 
-// The same calls AgentEco's own demo agents make: REST for the off-chain
-// half, AgentEco.sol for the money.
+// The SDK in agent-runtime/src/sdk — the seller-agent/ and buyer-agent/ examples are built on it.
 const CODE: Tok[][] = [
-  [pn('// 1. Register — signed by the owner wallet')],
-  [kw('POST'), vr(' /agents'), pn(' { '), prop('role'), pn(': '), str('"seller"'), pn(', '), prop('capabilities'), pn(': ['), str('"data_analysis"'), pn('],')],
-  [pn('               '), prop('price'), pn(': '), vr('0.30'), pn(', '), prop('minimumPrice'), pn(': '), vr('0.24'), pn(' }')],
+  [kw('import'), pn(' { '), vr('createSellerAgent'), pn(', '), vr('hire'), pn(' } '), kw('from'), str(" '@agenteco/sdk'")],
   [],
-  [pn('// 2. Discover')],
-  [kw('GET'), vr('  /agents'), pn('?'), prop('role'), pn('='), str('seller'), pn('&'), prop('capability'), pn('='), str('data_analysis'), pn('&'), prop('isOnline'), pn('='), str('true')],
+  [pn('// Sell — any capability in the registry, your own handler')],
+  [fn('createSellerAgent'), pn('({ '), prop('privateKey'), pn(', '), prop('capability'), pn(': '), str("'sentiment_score'"), pn(',')],
+  [pn('  '), prop('price'), pn(': '), vr('0.06'), pn(', '), prop('floor'), pn(': '), vr('0.04'), pn(',')],
+  [pn('  '), prop('handle'), pn(': '), kw('async'), pn(' ('), vr('job'), pn(') => '), fn('score'), pn('('), vr('job'), pn('.'), prop('brief'), pn('),')],
+  [pn('}).'), fn('start'), pn('()')],
   [],
-  [pn('// 3. Negotiate')],
-  [kw('POST'), vr(' /negotiations'), pn(' { '), prop('sellerAgentId'), pn(', '), prop('capability'), pn(', '), prop('price'), pn(': '), vr('0.15'), pn(' }')],
-  [kw('POST'), vr(' /negotiations/:id/messages'), pn(' { '), prop('action'), pn(': '), str('"counter"'), pn(', '), prop('price'), pn(': '), vr('0.28'), pn(' }')],
-  [],
-  [pn('// 4. Escrow on AgentEco.sol')],
-  [fn('createEscrow'), pn('('), vr('seller'), pn(', '), vr(`0.25 ${TOKEN_SYMBOL}`), pn(', '), vr('24h'), pn(', '), vr('48h'), pn(') → '), fn('fundEscrow'), pn('('), vr('id'), pn(')')],
-  [],
-  [pn('// 5. Execute & settle')],
-  [fn('startExecution'), pn('('), vr('id'), pn(') → '), fn('markDelivered'), pn('('), vr('id'), pn(', '), vr('resultHash'), pn(') → '), fn('acceptAndSettle'), pn('('), vr('id'), pn(')')],
+  [pn('// Buy — negotiate, escrow, verify, settle')],
+  [kw('const'), pn(' { '), vr('result'), pn(', '), vr('outcome'), pn(' } = '), kw('await'), pn(' '), fn('hire'), pn('({ '), prop('privateKey'), pn(',')],
+  [pn('  '), prop('capability'), pn(': '), str("'sentiment_score'"), pn(', '), prop('brief'), pn(': { '), prop('text'), pn(' },')],
+  [pn('  '), prop('maxBudget'), pn(': '), vr('0.05'), pn(', '), pn('// never shown to the seller')],
+  [pn('})'), pn(`  // escrowed in ${TOKEN_SYMBOL} on AgentEco.sol`)],
 ]
 
 function ProcessIcon() {
@@ -117,7 +113,7 @@ function HashIcon() {
 const BUILDING_BLOCKS: { title: string; description: string; Icon: () => JSX.Element }[] = [
   {
     title: 'Run your own agent',
-    description: 'Skip hosting: a process with its own key talks to the same API — like the seller-agent/ example.',
+    description: 'The SDK runs on your machine with your own key — AgentEco never holds it.',
     Icon: ProcessIcon,
   },
   {
@@ -127,7 +123,7 @@ const BUILDING_BLOCKS: { title: string; description: string; Icon: () => JSX.Ele
   },
   {
     title: 'Open escrow contract',
-    description: 'AgentEco.sol is deployed on BNB Smart Chain — read it, call it, verify it yourself.',
+    description: 'AgentEco.sol v2 on BNB Smart Chain, reentrancy-guarded and verified on BscScan.',
     Icon: ContractIcon,
   },
   {
@@ -180,7 +176,7 @@ function CodePanel() {
           <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[#EF4444]/70" />
           <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]/70" />
           <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[#22A06B]/70" />
-          <span className={`ml-2 text-[12px] text-[#F5F5F7] ${fragmentMono.className}`}>AgentEco API + AgentEco.sol</span>
+          <span className={`ml-2 text-[12px] text-[#F5F5F7] ${fragmentMono.className}`}>AgentEco SDK</span>
         </div>
         <span className={`rounded-md border border-white/10 px-2 py-1 text-[10px] tracking-[0.12em] text-[#A3A5AE] ${fragmentMono.className}`}>
           EXAMPLE

@@ -5,7 +5,7 @@ import { keccak256, stringToHex, zeroHash } from 'viem'
 import { useAccount, useSignMessage, useWriteContract } from 'wagmi'
 import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { wagmiConfig } from '@/lib/web3/config'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from '@/lib/web3/abi'
+import { AGENT_ECO_ABI, ERC20_ABI, USDT_ADDRESS, agentEcoFor } from '@/lib/web3/abi'
 import { forgetPendingReason, rememberPendingReason, submitDisputeReason } from '@/lib/api/disputes'
 import { textHash } from '@shared/hashes'
 import {
@@ -129,7 +129,7 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
     rememberPendingReason(escrowId.toString(), reason)
     try {
       const hash = await writeContractAsync({
-        address: AGENT_ECO_ADDRESS,
+        address: agentEcoFor(escrowId),
         abi: AGENT_ECO_ABI,
         functionName: 'raiseDispute',
         args: [escrowId, textHash(reason)],
@@ -166,19 +166,19 @@ export function EscrowActionPanel({ escrowId, buyer, seller, amount, status, onC
         address: USDT_ADDRESS,
         abi: ERC20_ABI,
         functionName: 'allowance',
-        args: [address, AGENT_ECO_ADDRESS],
+        args: [address, agentEcoFor(escrowId)],
       })
       if (allowance < amount) {
         const approveHash = await writeContractAsync({
           address: USDT_ADDRESS,
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [AGENT_ECO_ADDRESS, amount],
+          args: [agentEcoFor(escrowId), amount],
         })
         await waitForTransactionReceipt(wagmiConfig, { hash: approveHash })
       }
       const fundHash = await writeContractAsync({
-        address: AGENT_ECO_ADDRESS,
+        address: agentEcoFor(escrowId),
         abi: AGENT_ECO_ABI,
         functionName: 'fundEscrow',
         args: [escrowId],

@@ -1,5 +1,6 @@
 import type { Address, PublicClient } from 'viem'
 import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS } from '../../../agent-runtime/src/onchain/abi.ts'
+import { LEGACY_AGENT_ECO_ADDRESS } from '../../../agent-runtime/src/network.ts'
 
 export interface OnchainReputation {
   completedJobs: number
@@ -11,14 +12,22 @@ export interface OnchainReputation {
   avgRatingScore: number | null
 }
 
-/** Raw on-chain reputation, exactly as AgentEco.sol reports it. */
+/**
+ * Raw on-chain reputation, as AgentEco.sol reports it — summed over the
+ * current deployment and the legacy one, so a seller keeps its history.
+ */
 export async function getOnchainReputation(publicClient: PublicClient, address: Address): Promise<OnchainReputation> {
-  const [completed, failed, , ratingSum, ratingCount] = await publicClient.readContract({
-    address: AGENT_ECO_ADDRESS,
-    abi: AGENT_ECO_ABI,
-    functionName: 'getReputation',
-    args: [address],
-  })
+  const contracts = LEGACY_AGENT_ECO_ADDRESS ? [AGENT_ECO_ADDRESS, LEGACY_AGENT_ECO_ADDRESS] : [AGENT_ECO_ADDRESS]
+  const reads = await Promise.all(
+    contracts.map((contract) => publicClient.readContract({ address: contract, abi: AGENT_ECO_ABI, functionName: 'getReputation', args: [address] }))
+  )
+  let [completed, failed, ratingSum, ratingCount] = [BigInt(0), BigInt(0), BigInt(0), BigInt(0)]
+  for (const [c, f, , sum, count] of reads) {
+    completed += c
+    failed += f
+    ratingSum += sum
+    ratingCount += count
+  }
   const completedJobs = Number(completed)
   const failedJobs = Number(failed)
   const finished = completedJobs + failedJobs

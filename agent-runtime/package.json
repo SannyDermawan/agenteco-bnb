@@ -1,9 +1,14 @@
 {
-  "name": "agenteco-agent-runtime",
+  "name": "@agenteco/sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Generic DemoAgentRuntime shared by buyer-agent and seller-agent — capability matching, offer/counter-offer policy, the code half of the 4 capabilities, and on-chain clients. Not deployed on its own.",
+  "description": "AgentEco SDK and agent runtime: createSellerAgent, hire() and the capability registry for self-hosted agents (src/sdk), plus the shared negotiation policy, capability code, hashes and on-chain clients the backend uses. TypeScript sources, run with tsx.",
   "type": "module",
+  "exports": {
+    ".": "./src/sdk/index.ts",
+    "./runtime": "./src/index.ts",
+    "./shared/*": "./src/shared/*"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "test": "node --import tsx --test \"src/**/*.test.ts\""

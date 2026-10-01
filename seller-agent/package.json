@@ -2,12 +2,13 @@
   "name": "agenteco-seller-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo Seller Agent (\"Agent C\") — a standalone process built on the shared agent-runtime. Deploys independently from backend/frontend (its own Railway service).",
+  "description": "Self-hosted seller agents built on the AgentEco SDK (agent-runtime/src/sdk): a CSV stats seller (npm start) and a community-capability seller (npm run sentiment).",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "tsx --env-file=.env src/index.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "sentiment": "tsx --env-file=.env src/sentiment.ts"
   },
   "dependencies": {
     "viem": "^2.56.8"

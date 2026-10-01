@@ -9,6 +9,7 @@ import { UUID_REGEX, agentView, isAgentOwner, optionalViewer, visibleAgentsFilte
 import { encryptAgentKey } from '../agentKeyCrypto.ts'
 import { findBlockingWork, withdrawHostedWallet } from '../agentDeletion.ts'
 import { createAgentSchema, listAgentsQuerySchema, updateAgentSchema } from '../schemas/agent.ts'
+import { unknownCapabilities } from '../capabilityRegistry.ts'
 
 export const agentsRouter = Router()
 
@@ -80,13 +81,18 @@ agentsRouter.post('/', async (req, res) => {
   }
 
   const { hosted, ...agentData } = parsed.data
+  const unknown = await unknownCapabilities(agentData.capabilities)
+  if (unknown.length) {
+    return res.status(400).json({ error: `Unknown capability "${unknown[0]}" — publish it in the capability registry first.` })
+  }
 
   // A hosted buyer task (or a seller created with hosted: true) gets its own
   // wallet — the host runtime signs with it directly, so the human never has
   // to keep MetaMask open once it's funded. See agentKeyCrypto.ts for the
   // (testnet-only) custodial trade-off.
   const hostedFields: Partial<Prisma.AgentCreateInput> = {}
-  if (agentData.role === 'buyer' || hosted) {
+  // hosted: false = a self-hosted buyer (SDK, buyer-agent/) paying from its own key.
+  if ((agentData.role === 'buyer' && hosted !== false) || hosted) {
     const agentPrivateKey = generatePrivateKey()
     const agentAccount = privateKeyToAccount(agentPrivateKey)
     hostedFields.walletAddress = agentAccount.address
@@ -162,6 +168,16 @@ agentsRouter.patch('/:id', async (req, res) => {
 
   if (auth.wallet.toLowerCase() !== existing.ownerWallet.toLowerCase()) {
     return res.status(403).json({ error: 'Only the agent owner can update this agent' })
+  }
+  if (parsed.data.capabilities) {
+    const unknown = await unknownCapabilities(parsed.data.capabilities)
+    if (unknown.length) {
+      return res.status(400).json({ error: `Unknown capability "${unknown[0]}" — publish it in the capability registry first.` })
+    }
+    // Hosted agents run on AgentEco's executors, which only know the platform capabilities.
+    if (existing.taskStatus !== null && parsed.data.capabilities.some((c) => !isCapabilityId(c))) {
+      return res.status(400).json({ error: 'Hosted agents run platform capabilities only.' })
+    }
   }
   if (parsed.data.isOnline && existing.role === 'seller' && existing.taskStatus === 'awaiting_deposit') {
     return res.status(400).json({ error: 'Deposit gas and activate this agent before putting it online' })

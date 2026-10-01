@@ -4,20 +4,19 @@ import {
   createOnchainClients,
   getEscrowDisputeInfo,
   getEscrowHashes,
-  resolveDisputeOnchain,
   type OnchainClients,
 } from '../../../agent-runtime/src/index.ts'
+import { canRule, readArbiterSetup, ruleDispute } from '../../../agent-runtime/src/onchain/arbiter.ts'
 import { readAllEscrows, type EscrowBasic } from '../../../agent-runtime/src/onchain/escrowIndex.ts'
 import { ARBITER_OVERRIDE_WINDOW_SECONDS, SELLER_RESPONSE_WINDOW_SECONDS } from '../../../agent-runtime/src/durations.ts'
-import { AGENT_ECO_ABI } from '../../../agent-runtime/src/shared/abi.generated.ts'
 import { buildRationalePreimage, hashPreimage, type RationaleInput } from '../../../agent-runtime/src/shared/hashes.ts'
-import { isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
+import { getCapability } from '../capabilityRegistry.ts'
 import { recommendRuling, shouldAutoResolve } from '../ai/judge.ts'
 import { ARBITER_AUTO_MIN_CONFIDENCE } from '../ai/config.ts'
 import { prisma } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, appChain, appTransport } from '../network.ts'
+import { AGENT_ECO_ADDRESS, RPC_URL, agentEcoFor, appChain, appTransport } from '../network.ts'
 
 /**
  * The AI arbiter (spec §11 steps 3–5), run by the host process: it already has
@@ -30,6 +29,10 @@ import { AGENT_ECO_ADDRESS, RPC_URL, appChain, appTransport } from '../network.t
  * page. After that, a confident recommendation (≥ ARBITER_AUTO_MIN_CONFIDENCE)
  * with ≥ 60 s left before the on-chain deadline is executed here with
  * ARBITER_PRIVATE_KEY. Anything else waits for the human or the timeout refund.
+ *
+ * On AgentEco v2 the arbiter is an ArbiterCouncil and ARBITER_PRIVATE_KEY is
+ * one of its members: the AI's ruling is its vote, which executes at once
+ * when the council's ruling threshold is 1, or waits for a human's matching vote.
  */
 
 // AgentEco.sol OrderStatus
@@ -44,7 +47,10 @@ const chain = { publicClient } as unknown as Pick<OnchainClients, 'publicClient'
 
 let arbiter: OnchainClients | null | undefined
 
-/** The arbiter wallet, if ARBITER_PRIVATE_KEY is set and is the contract's arbiter; otherwise recommend-only. */
+/**
+ * The arbiter wallet, if ARBITER_PRIVATE_KEY is set and is the contract's
+ * arbiter or a member of its council; otherwise recommend-only.
+ */
 export async function initArbiter(): Promise<void> {
   const raw = process.env.ARBITER_PRIVATE_KEY?.trim()
   const key = raw && !raw.startsWith('0x') ? `0x${raw}` : raw
@@ -53,15 +59,19 @@ export async function initArbiter(): Promise<void> {
     log('Arbiter: no ARBITER_PRIVATE_KEY — AI recommendations only, no automatic rulings.', 'HOST')
     return
   }
-  const onchainArbiter = await publicClient.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'arbiter' })
+  const setup = await readArbiterSetup(publicClient, AGENT_ECO_ADDRESS)
   const account = privateKeyToAccount(key)
-  if (account.address.toLowerCase() !== onchainArbiter.toLowerCase()) {
+  if (!canRule(setup, account.address)) {
     arbiter = null
-    log(`Arbiter: ARBITER_PRIVATE_KEY is ${account.address}, but the contract's arbiter is ${onchainArbiter} — recommendations only.`, 'HOST')
+    const who = setup.council ? `a member of the arbiter council ${setup.council.address}` : `the contract's arbiter (${setup.arbiter})`
+    log(`Arbiter: ARBITER_PRIVATE_KEY is ${account.address}, which is not ${who} — recommendations only.`, 'HOST')
     return
   }
   arbiter = createOnchainClients(key, RPC_URL)
-  log(`Arbiter: ${account.address} — auto-rules at confidence ≥ ${ARBITER_AUTO_MIN_CONFIDENCE} after a ${ARBITER_OVERRIDE_WINDOW_SECONDS}s override window.`, 'HOST')
+  const via = setup.council
+    ? `, voting in ArbiterCouncil ${setup.council.address} (${setup.council.rulingThreshold} of ${setup.council.members.length} votes rule)`
+    : ''
+  log(`Arbiter: ${account.address}${via} — auto-rules at confidence ≥ ${ARBITER_AUTO_MIN_CONFIDENCE} after a ${ARBITER_OVERRIDE_WINDOW_SECONDS}s override window.`, 'HOST')
 }
 
 const nowSec = () => Math.floor(Date.now() / 1000)
@@ -99,10 +109,19 @@ async function recommend(escrow: EscrowBasic, disputedAt: number): Promise<void>
     prisma.task.findUnique({ where: { escrowId: id } }),
     prisma.escrowResult.findUnique({ where: { escrowId: id } }),
   ])
+  // Platform or community capability — a community one is judged by its published rubric.
+  const capability = task ? await getCapability(task.capability) : null
   const rec =
-    task && result?.resultJson && isCapabilityId(task.capability)
+    task && result?.resultJson && capability
       ? await recommendRuling(
-          { capability: task.capability, brief: task.brief, criteria: task.criteria, result: JSON.parse(result.resultJson) },
+          {
+            capability: task.capability,
+            label: capability.name,
+            rubric: capability.rubric,
+            brief: task.brief,
+            criteria: task.criteria,
+            result: JSON.parse(result.resultJson),
+          },
           row.reason || null,
           row.sellerResponse ?? null
         )
@@ -157,7 +176,13 @@ async function autoResolve(escrow: EscrowBasic, disputeDeadline: number): Promis
   const preimage = buildRationalePreimage(rationale)
   const toSeller = rationale.verdict === 'seller'
   log(`[arbiter] escrow #${id}: executing the AI ruling for the ${rationale.verdict}…`)
-  const tx = await resolveDisputeOnchain(arbiter, escrow.id, toSeller, hashPreimage(preimage))
+  const outcome = await ruleDispute(arbiter, escrow.id, toSeller, hashPreimage(preimage))
+  if (outcome.kind !== 'executed') {
+    // Council with a ruling threshold above 1: the AI's vote waits for a human's.
+    logOnce(id, 'council-vote', `[arbiter] escrow #${id}: AI voted ${rationale.verdict} in the arbiter council (${outcome.votes}/${outcome.needed}) — waiting for another member.`)
+    return
+  }
+  const tx = outcome.hash
   await prisma.dispute.update({
     where: { escrowId: id },
     data: {
@@ -201,7 +226,8 @@ export async function runArbiterCycleOnce(): Promise<void> {
   const escrows = await readAllEscrows(chain.publicClient)
   const statusById = new Map(escrows.map((e) => [e.id.toString(), e.status]))
 
-  const disputed = escrows.filter((e) => e.status === DISPUTED)
+  // Only the current deployment's disputes can still be ruled (its arbiter is the one checked above).
+  const disputed = escrows.filter((e) => e.status === DISPUTED && agentEcoFor(e.id) === AGENT_ECO_ADDRESS)
   if (disputed.length && arbiter) await warnIfLowGas(arbiter.publicClient, arbiter.account.address, 'arbiter')
   for (const escrow of disputed) {
     try {

@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { createPublicClient, type Address } from 'viem'
 import { prisma } from '../db.ts'
 import { buildResultPreimage, hashPreimage } from '../../../agent-runtime/src/shared/hashes.ts'
-import { AGENT_ECO_ADDRESS, appChain, appTransport } from '../network.ts'
+import { agentEcoFor, appChain, appTransport } from '../network.ts'
 import { createEscrowResultSchema } from '../schemas/escrowResult.ts'
 import { guardEscrow } from '../access.ts'
 
@@ -42,7 +42,7 @@ escrowResultsRouter.post('/', async (req, res) => {
   let onChainHash: `0x${string}`
   try {
     onChainHash = await publicClient.readContract({
-      address: AGENT_ECO_ADDRESS,
+      address: agentEcoFor(BigInt(escrowId)),
       abi: RESULT_HASH_ABI,
       functionName: 'getResultHash',
       args: [BigInt(escrowId)],

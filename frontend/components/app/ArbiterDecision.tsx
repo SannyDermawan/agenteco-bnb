@@ -1,10 +1,11 @@
 'use client'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { waitForTransactionReceipt, writeContract } from 'wagmi/actions'
+import { readContract, waitForTransactionReceipt, writeContract } from 'wagmi/actions'
 import { rationaleHash, type RationaleInput } from '@shared/hashes'
 import { wagmiConfig } from '@/lib/web3/config'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS } from '@/lib/web3/abi'
+import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ARBITER_COUNCIL_ABI, agentEcoFor } from '@/lib/web3/abi'
+import { useArbiterCouncil } from '@/lib/web3/hooks'
 import { submitDisputeResolution, type ApiDispute } from '@/lib/api/disputes'
 
 const MIN_RATIONALE = 10
@@ -20,6 +21,10 @@ const label = (v: Verdict) => (v === 'seller' ? 'Release to seller' : 'Refund bu
  * Reverse rules the other way with the arbiter's own reasons. Either commits
  * rationaleHash(verdict, confidence, rationale, "arbiter-manual") on-chain,
  * then posts the rationale so anyone can re-hash it.
+ *
+ * When the arbiter is an ArbiterCouncil (AgentEco v2), the ruling is this
+ * member's vote: it executes when it reaches the council's ruling threshold,
+ * otherwise it waits for another member to vote the same ruling.
  */
 export function ArbiterDecision({ escrowId, dispute }: { escrowId: bigint; dispute: ApiDispute | undefined }) {
   const queryClient = useQueryClient()
@@ -29,19 +34,41 @@ export function ArbiterDecision({ escrowId, dispute }: { escrowId: bigint; dispu
   const [manualVerdict, setManualVerdict] = useState<Verdict>('buyer')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  // Only the current deployment's arbiter is a council; v1 escrows keep their wallet arbiter.
+  const councilInfo = useArbiterCouncil()
+  const council = agentEcoFor(escrowId) === AGENT_ECO_ADDRESS ? councilInfo : null
 
   async function rule(input: RationaleInput) {
     setError(null)
+    setNote(null)
     try {
-      setBusy('Confirm the ruling in your wallet…')
-      const hash = await writeContract(wagmiConfig, {
-        address: AGENT_ECO_ADDRESS,
-        abi: AGENT_ECO_ABI,
-        functionName: input.verdict === 'seller' ? 'resolveDisputeForSeller' : 'resolveDisputeForBuyer',
-        args: [escrowId, rationaleHash(input)],
-      })
+      setBusy(council ? 'Confirm your council vote in your wallet…' : 'Confirm the ruling in your wallet…')
+      const toSeller = input.verdict === 'seller'
+      const hash = council
+        ? await writeContract(wagmiConfig, {
+            address: council.address,
+            abi: ARBITER_COUNCIL_ABI,
+            functionName: 'voteRuling',
+            args: [escrowId, toSeller, rationaleHash(input)],
+          })
+        : await writeContract(wagmiConfig, {
+            address: agentEcoFor(escrowId),
+            abi: AGENT_ECO_ABI,
+            functionName: toSeller ? 'resolveDisputeForSeller' : 'resolveDisputeForBuyer',
+            args: [escrowId, rationaleHash(input)],
+          })
       setBusy('Waiting for the transaction…')
       await waitForTransactionReceipt(wagmiConfig, { hash })
+      if (council) {
+        const status = await readContract(wagmiConfig, { address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowStatus', args: [escrowId] })
+        if (Number(status) === 4) {
+          // Still DISPUTED: the vote is in, the ruling needs more members.
+          setNote(`Your vote is recorded. The ruling executes once ${council.rulingThreshold} council members vote for it.`)
+          setMode('idle')
+          return
+        }
+      }
       setBusy('Publishing the rationale…')
       await submitDisputeResolution(escrowId.toString(), input, hash)
       await Promise.all([
@@ -143,6 +170,7 @@ export function ArbiterDecision({ escrowId, dispute }: { escrowId: bigint; dispu
       )}
 
       {busy && <p className="text-[12px] text-[#8B8D96]">{busy}</p>}
+      {note && <p className="text-[12px] text-[#A3A5AE]">{note}</p>}
       {error && <p className="text-[12px] text-[#EF4444]">{error}</p>}
     </div>
   )

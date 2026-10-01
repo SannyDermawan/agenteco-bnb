@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { createPublicClient } from 'viem'
 import { prisma } from '../db.ts'
-import { AGENT_ECO_ADDRESS, appChain, appTransport } from '../network.ts'
+import { agentEcoFor, appChain, appTransport } from '../network.ts'
 import { verifyOwnerAuth } from '../auth.ts'
 import { guardEscrow, isArbiter, requireViewer } from '../access.ts'
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
@@ -20,8 +20,8 @@ const REFUNDED = 6
 async function readEscrow(escrowId: string) {
   const id = BigInt(escrowId)
   const [basic, hashes] = await Promise.all([
-    publicClient.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowBasic', args: [id] }),
-    publicClient.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [id] }),
+    publicClient.readContract({ address: agentEcoFor(id), abi: AGENT_ECO_ABI, functionName: 'getEscrowBasic', args: [id] }),
+    publicClient.readContract({ address: agentEcoFor(id), abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [id] }),
   ])
   const [buyer, seller, , status] = basic
   const [, , reasonHash, responseHash, resolutionHash] = hashes

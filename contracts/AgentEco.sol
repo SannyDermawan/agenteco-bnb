@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 /**
  * @title AgentEco
  * @notice Escrow + settlement + reputation infrastructure for AgentEco MVP.
@@ -42,11 +44,21 @@ pragma solidity ^0.8.24;
  * - post-delivery review window + dispute resolution with a deadline
  * - on-chain reputation (completed / failed jobs, volume, ratings)
  *
+ * Version 2 adds:
+ * - a reentrancy guard on every function that moves tokens;
+ * - a two-step arbiter handover (transferArbiter, then acceptArbiter by the
+ *   new arbiter), so the role can never be sent to a wrong address;
+ * - firstEscrowId, so a new deployment can continue the numbering of an
+ *   older one and ids never collide in the off-chain records.
+ * The arbiter may be a contract — e.g. ArbiterCouncil, a small multisig.
+ *
  * Compiled with the optimizer (runs = 200) and viaIR off. The escrow
  * struct is read through several small getters to stay clear of the
  * legacy pipeline's "stack too deep" limit.
  */
-contract AgentEco {
+contract AgentEco is ReentrancyGuard {
+
+    string public constant VERSION = "2";
 
     // =============================================================
     // CONFIGURATION
@@ -60,12 +72,16 @@ contract AgentEco {
     address public immutable USDT;
 
     /**
-     * Address allowed to resolve disputes. A single trusted arbiter is
-     * a deliberate MVP simplification — swap for a multisig or a
-     * decentralized arbitration system before relying on this in
-     * production with real value at stake.
+     * Address allowed to resolve disputes: a wallet, or a contract such as
+     * ArbiterCouncil (a multisig of the AI arbiter and human operators).
      */
     address public arbiter;
+
+    /// Proposed next arbiter; it must call acceptArbiter() to take over.
+    address public pendingArbiter;
+
+    /// Id of this deployment's first escrow (see nextEscrowId).
+    uint256 public immutable firstEscrowId;
 
     uint256 public constant MAX_WINDOW = 90 days;
 
@@ -181,7 +197,8 @@ contract AgentEco {
     // STATE
     // =============================================================
 
-    uint256 public nextEscrowId = 1;
+    /// Id the next escrow gets. Ids run firstEscrowId..nextEscrowId-1.
+    uint256 public nextEscrowId;
 
     /**
      * Private: no auto-generated single-struct getter (that was the
@@ -288,6 +305,11 @@ contract AgentEco {
         address indexed newArbiter
     );
 
+    event ArbiterTransferStarted(
+        address indexed currentArbiter,
+        address indexed pendingArbiter
+    );
+
     // =============================================================
     // MODIFIERS
     // =============================================================
@@ -333,7 +355,8 @@ contract AgentEco {
         address arbiter_,
         uint256 minWindow_,
         uint256 acceptTimeout_,
-        uint256 disputeTimeout_
+        uint256 disputeTimeout_,
+        uint256 firstEscrowId_
     ) {
         require(usdtToken != address(0), "Invalid USDT address");
         require(arbiter_ != address(0), "Invalid arbiter");
@@ -347,11 +370,15 @@ contract AgentEco {
             "Invalid dispute timeout"
         );
 
+        require(firstEscrowId_ > 0, "Invalid first escrow id");
+
         USDT = usdtToken;
         arbiter = arbiter_;
         minWindow = minWindow_;
         acceptTimeout = acceptTimeout_;
         disputeTimeout = disputeTimeout_;
+        firstEscrowId = firstEscrowId_;
+        nextEscrowId = firstEscrowId_;
     }
 
     // =============================================================
@@ -359,15 +386,30 @@ contract AgentEco {
     // =============================================================
 
     /**
-     * @notice Transfer the arbiter role to a new address.
+     * @notice Step 1 of handing over the arbiter role: name the next
+     * arbiter. Nothing changes until it calls acceptArbiter(), so a typo'd
+     * address can never take the role. Naming address(0) cancels.
      */
-    function setArbiter(address newArbiter) external onlyArbiter {
-        require(newArbiter != address(0), "Invalid arbiter");
+    function transferArbiter(address newArbiter) external onlyArbiter {
+        pendingArbiter = newArbiter;
+
+        emit ArbiterTransferStarted(arbiter, newArbiter);
+    }
+
+    /**
+     * @notice Step 2: the named address takes over the arbiter role.
+     */
+    function acceptArbiter() external {
+        require(
+            msg.sender == pendingArbiter && msg.sender != address(0),
+            "Only pending arbiter"
+        );
 
         address previous = arbiter;
-        arbiter = newArbiter;
+        arbiter = msg.sender;
+        pendingArbiter = address(0);
 
-        emit ArbiterUpdated(previous, newArbiter);
+        emit ArbiterUpdated(previous, msg.sender);
     }
 
     // =============================================================
@@ -484,6 +526,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
         onlyBuyer(escrowId)
     {
@@ -567,6 +610,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
     {
         Escrow storage escrow = escrows[escrowId];
@@ -663,6 +707,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
     {
         Escrow storage escrow = escrows[escrowId];
@@ -715,6 +760,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
         onlyBuyer(escrowId)
     {
@@ -742,6 +788,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
     {
         Escrow storage escrow = escrows[escrowId];
@@ -852,6 +899,7 @@ contract AgentEco {
         bytes32 rationaleHash
     )
         external
+        nonReentrant
         escrowExists(escrowId)
         onlyArbiter
     {
@@ -873,6 +921,7 @@ contract AgentEco {
         bytes32 rationaleHash
     )
         external
+        nonReentrant
         escrowExists(escrowId)
         onlyArbiter
     {
@@ -907,6 +956,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
     {
         Escrow storage escrow = escrows[escrowId];
@@ -1038,6 +1088,7 @@ contract AgentEco {
         uint256 escrowId
     )
         external
+        nonReentrant
         escrowExists(escrowId)
         onlyBuyer(escrowId)
     {

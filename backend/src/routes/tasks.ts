@@ -7,9 +7,11 @@ import { verifyOwnerAuth } from '../auth.ts'
 import { UUID_REGEX, canViewParties, guardEscrow, requireViewer } from '../access.ts'
 import { AGENT_ECO_ABI } from '../abi/agentEcoAbi.ts'
 import { ERC20_ABI } from '../../../agent-runtime/src/onchain/abi.ts'
-import { AGENT_ECO_ADDRESS, USDT_ADDRESS, appChain, appTransport } from '../network.ts'
+import { agentEcoFor, USDT_ADDRESS, appChain, appTransport } from '../network.ts'
 import { buildTaskPreimage, canonicalize, hashPreimage, normalizePrice } from '../../../agent-runtime/src/shared/hashes.ts'
-import { CAPABILITIES } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
+import { CAPABILITIES, isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
+import { validateWithSchema } from '../../../agent-runtime/src/shared/capabilities/custom.ts'
+import { getCapability } from '../capabilityRegistry.ts'
 import { createTaskSchema, linkTaskEscrowSchema } from '../schemas/task.ts'
 
 export const tasksRouter = Router()
@@ -30,9 +32,20 @@ tasksRouter.post('/', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
   const { capability, criteria, seller } = parsed.data
 
-  const brief = CAPABILITIES[capability].input.safeParse(parsed.data.brief)
-  if (!brief.success) {
-    return res.status(400).json({ error: `Invalid ${capability} brief: ${brief.error.issues.map((i) => i.message).join('; ')}` })
+  // Platform capabilities validate with their zod schemas; community ones with their published JSON Schema.
+  let brief: { data: unknown }
+  if (isCapabilityId(capability)) {
+    const checked = CAPABILITIES[capability].input.safeParse(parsed.data.brief)
+    if (!checked.success) {
+      return res.status(400).json({ error: `Invalid ${capability} brief: ${checked.error.issues.map((i) => i.message).join('; ')}` })
+    }
+    brief = checked
+  } else {
+    const info = await getCapability(capability)
+    if (!info) return res.status(400).json({ error: `Unknown capability "${capability}" — publish it in the registry first.` })
+    const checked = validateWithSchema(info.inputSchema, parsed.data.brief)
+    if (!checked.ok) return res.status(400).json({ error: `Invalid ${capability} brief: ${checked.error}` })
+    brief = checked
   }
 
   let price: string
@@ -92,8 +105,8 @@ tasksRouter.post('/:id/escrow', async (req, res) => {
   let onchain: { buyer: string; seller: string; amount: bigint; taskHash: string }
   try {
     const [[buyer, seller, amount], [taskHash]] = await Promise.all([
-      publicClient.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowBasic', args: [escrowId] }),
-      publicClient.readContract({ address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [escrowId] }),
+      publicClient.readContract({ address: agentEcoFor(escrowId), abi: AGENT_ECO_ABI, functionName: 'getEscrowBasic', args: [escrowId] }),
+      publicClient.readContract({ address: agentEcoFor(escrowId), abi: AGENT_ECO_ABI, functionName: 'getEscrowHashes', args: [escrowId] }),
     ])
     onchain = { buyer, seller, amount, taskHash }
   } catch {

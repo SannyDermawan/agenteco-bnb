@@ -2,10 +2,21 @@
 import { useCallback } from 'react'
 import { useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { decodeEventLog, type TransactionReceipt } from 'viem'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ERC20_ABI, USDT_ADDRESS } from './abi'
+import {
+  AGENT_ECO_ABI,
+  AGENT_ECO_ADDRESS,
+  ARBITER_COUNCIL_ABI,
+  ERC20_ABI,
+  LEGACY_AGENT_ECO_ADDRESS,
+  USDT_ADDRESS,
+  agentEcoFor,
+} from './abi'
 import { summarizeReputation } from './reputation'
 
 const contract = { address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI } as const
+/** The contract an escrow lives on: v2, or v1 for ids below 1001 (see ./network.ts). */
+const contractFor = (escrowId: bigint | undefined) =>
+  ({ address: escrowId === undefined ? AGENT_ECO_ADDRESS : agentEcoFor(escrowId), abi: AGENT_ECO_ABI }) as const
 
 // Hosted agents move escrows forward on their own, so an open order page has
 // to poll to show it live — until the escrow can't change any more.
@@ -19,7 +30,7 @@ const TERMINAL_STATUSES = new Set([5, 6])
 
 export function useEscrowBasic(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getEscrowBasic',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: {
@@ -34,7 +45,7 @@ export function useEscrowBasic(escrowId?: bigint) {
 
 export function useEscrowTimestamps(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getEscrowTimestamps',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: {
@@ -47,25 +58,58 @@ export function useEscrowTimestamps(escrowId?: bigint) {
 
 /**
  * The arbiter, read from AgentEco.sol itself rather than hardcoded — so a new
- * deployment (e.g. mainnet) or a setArbiter() change is picked up automatically.
+ * deployment or an arbiter handover is picked up automatically.
  */
 export function useArbiter() {
   return useReadContract({
     ...contract,
     functionName: 'arbiter',
-    query: { staleTime: 5 * 60_000 },
+    query: { staleTime: 60_000 },
   })
 }
 
-/** True when `address` is the contract's current arbiter. */
+export interface ArbiterCouncilInfo {
+  address: `0x${string}`
+  members: readonly `0x${string}`[]
+  rulingThreshold: number
+}
+
+/**
+ * The arbiter council, when AgentEco's arbiter is an ArbiterCouncil contract
+ * (v2) rather than a wallet: its members and how many votes a ruling needs.
+ * Null for a wallet arbiter (the council reads fail on an address with no code).
+ */
+export function useArbiterCouncil(): ArbiterCouncilInfo | null | undefined {
+  const { data: arbiter } = useArbiter()
+  const { data, isPending } = useReadContracts({
+    allowFailure: true,
+    contracts: arbiter
+      ? [
+          { address: arbiter, abi: ARBITER_COUNCIL_ABI, functionName: 'getMembers' },
+          { address: arbiter, abi: ARBITER_COUNCIL_ABI, functionName: 'rulingThreshold' },
+        ]
+      : [],
+    query: { enabled: !!arbiter, staleTime: 60_000 },
+  })
+  if (!arbiter || isPending) return undefined
+  const [members, threshold] = data ?? []
+  if (members?.status !== 'success' || threshold?.status !== 'success') return null
+  return { address: arbiter, members: members.result as readonly `0x${string}`[], rulingThreshold: Number(threshold.result) }
+}
+
+/** True when `address` can rule disputes: the arbiter wallet, or a member of the arbiter council. */
 export function useIsArbiter(address?: string) {
   const { data: arbiter } = useArbiter()
-  return !!address && !!arbiter && address.toLowerCase() === arbiter.toLowerCase()
+  const council = useArbiterCouncil()
+  if (!address || !arbiter) return false
+  const a = address.toLowerCase()
+  if (council) return council.members.some((m) => m.toLowerCase() === a)
+  return a === arbiter.toLowerCase()
 }
 
 export function useEscrowWindows(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getEscrowWindows',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined },
@@ -74,7 +118,7 @@ export function useEscrowWindows(escrowId?: bigint) {
 
 export function useResultHash(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getResultHash',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined },
@@ -83,7 +127,7 @@ export function useResultHash(escrowId?: bigint) {
 
 export function useEscrowStatus(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getEscrowStatus',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined },
@@ -92,7 +136,7 @@ export function useEscrowStatus(escrowId?: bigint) {
 
 export function useIsExecutionTimedOut(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'isExecutionTimedOut',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined },
@@ -101,7 +145,7 @@ export function useIsExecutionTimedOut(escrowId?: bigint) {
 
 export function useIsReviewExpired(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'isReviewExpired',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined },
@@ -111,14 +155,14 @@ export function useIsReviewExpired(escrowId?: bigint) {
 /** Batched (multicall) read — for a dashboard aggregating many orders at once. */
 export function useEscrowStatuses(escrowIds: bigint[]) {
   return useReadContracts({
-    contracts: escrowIds.map((id) => ({ ...contract, functionName: 'getEscrowStatus' as const, args: [id] as const })),
+    contracts: escrowIds.map((id) => ({ ...contractFor(id), functionName: 'getEscrowStatus' as const, args: [id] as const })),
     query: { enabled: escrowIds.length > 0 },
   })
 }
 
 export function useEscrowTimestampsMulti(escrowIds: bigint[]) {
   return useReadContracts({
-    contracts: escrowIds.map((id) => ({ ...contract, functionName: 'getEscrowTimestamps' as const, args: [id] as const })),
+    contracts: escrowIds.map((id) => ({ ...contractFor(id), functionName: 'getEscrowTimestamps' as const, args: [id] as const })),
     query: { enabled: escrowIds.length > 0 },
   })
 }
@@ -126,7 +170,7 @@ export function useEscrowTimestampsMulti(escrowIds: bigint[]) {
 /** [disputedAt, disputeDeadline, acceptDeadline, rated] — polled until the escrow is final and rated. */
 export function useEscrowDisputeInfo(escrowId?: bigint, live = true) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getEscrowDisputeInfo',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined, refetchInterval: live ? LIVE_POLL_MS : false },
@@ -136,20 +180,33 @@ export function useEscrowDisputeInfo(escrowId?: bigint, live = true) {
 /** [taskHash, resultHash, disputeReasonHash, disputeResponseHash, resolutionHash]. */
 export function useEscrowHashes(escrowId?: bigint, live = true) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'getEscrowHashes',
     args: escrowId !== undefined ? [escrowId] : undefined,
     query: { enabled: escrowId !== undefined, refetchInterval: live ? LIVE_POLL_MS : false },
   })
 }
 
-/** On-chain reputation for `address`, as a named summary (see ./reputation.ts). */
+const REPUTATION_CONTRACTS = LEGACY_AGENT_ECO_ADDRESS ? [AGENT_ECO_ADDRESS, LEGACY_AGENT_ECO_ADDRESS] : [AGENT_ECO_ADDRESS]
+
+/**
+ * On-chain reputation for `address`, as a named summary (see ./reputation.ts) —
+ * summed over AgentEco v2 and v1, so a seller keeps its history.
+ */
 export function useReputation(address?: `0x${string}`) {
-  return useReadContract({
-    ...contract,
-    functionName: 'getReputation',
-    args: address ? [address] : undefined,
-    query: { enabled: !!address, select: summarizeReputation },
+  return useReadContracts({
+    allowFailure: false,
+    contracts: address
+      ? REPUTATION_CONTRACTS.map((a) => ({ address: a, abi: AGENT_ECO_ABI, functionName: 'getReputation' as const, args: [address] as const }))
+      : [],
+    query: {
+      enabled: !!address,
+      select: (rows) => {
+        const sum: [bigint, bigint, bigint, bigint, bigint] = [BigInt(0), BigInt(0), BigInt(0), BigInt(0), BigInt(0)]
+        for (const row of rows) for (let i = 0; i < 5; i++) sum[i] += (row as readonly bigint[])[i]
+        return summarizeReputation(sum)
+      },
+    },
   })
 }
 
@@ -205,7 +262,7 @@ function useEscrowAction(functionName: SimpleEscrowAction) {
 
   const write = useCallback(
     (escrowId: bigint) => {
-      writeContract({ ...contract, functionName, args: [escrowId] })
+      writeContract({ ...contractFor(escrowId), functionName, args: [escrowId] })
     },
     [writeContract, functionName]
   )
@@ -220,7 +277,7 @@ function useHashedEscrowAction(functionName: HashedEscrowAction) {
 
   const write = useCallback(
     (escrowId: bigint, textOrRationaleHash: `0x${string}`) => {
-      writeContract({ ...contract, functionName, args: [escrowId, textOrRationaleHash] })
+      writeContract({ ...contractFor(escrowId), functionName, args: [escrowId, textOrRationaleHash] })
     },
     [writeContract, functionName]
   )
@@ -283,7 +340,7 @@ export function useRateSeller() {
 
   const write = useCallback(
     (escrowId: bigint, score: number) => {
-      writeContract({ ...contract, functionName: 'rateSeller', args: [escrowId, score] })
+      writeContract({ ...contractFor(escrowId), functionName: 'rateSeller', args: [escrowId, score] })
     },
     [writeContract]
   )
@@ -297,7 +354,7 @@ export function useMarkDelivered() {
 
   const write = useCallback(
     (escrowId: bigint, resultHash: `0x${string}`) => {
-      writeContract({ ...contract, functionName: 'markDelivered', args: [escrowId, resultHash] })
+      writeContract({ ...contractFor(escrowId), functionName: 'markDelivered', args: [escrowId, resultHash] })
     },
     [writeContract]
   )

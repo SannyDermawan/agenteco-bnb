@@ -8,6 +8,7 @@ import {
   USDT_ADDRESS,
 } from './abi.ts'
 import type { OnchainClients } from './clients.ts'
+import { agentEcoFor } from '../network.ts'
 
 export function parseCreatedEscrowId(receipt: TransactionReceipt): bigint | null {
   for (const log of receipt.logs) {
@@ -82,7 +83,7 @@ export async function createAndFundEscrow(
 /** Seller side: move a funded escrow into EXECUTING. */
 export async function startExecution(clients: OnchainClients, escrowId: bigint): Promise<void> {
   const hash = await clients.walletClient.writeContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'startExecution',
     args: [escrowId],
@@ -93,7 +94,7 @@ export async function startExecution(clients: OnchainClients, escrowId: bigint):
 /** Seller side: deliver the task result (a hash of it — the payload itself lives off-chain/in logs). */
 export async function markDelivered(clients: OnchainClients, escrowId: bigint, resultHash: `0x${string}`): Promise<void> {
   const hash = await clients.walletClient.writeContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'markDelivered',
     args: [escrowId, resultHash],
@@ -104,7 +105,7 @@ export async function markDelivered(clients: OnchainClients, escrowId: bigint, r
 /** Buyer side: accept the delivered result and release payment in one call. */
 export async function acceptAndSettle(clients: OnchainClients, escrowId: bigint): Promise<void> {
   const hash = await clients.walletClient.writeContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'acceptAndSettle',
     args: [escrowId],
@@ -114,7 +115,7 @@ export async function acceptAndSettle(clients: OnchainClients, escrowId: bigint)
 
 export async function getEscrowStatus(clients: OnchainClients, escrowId: bigint): Promise<number> {
   return clients.publicClient.readContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'getEscrowStatus',
     args: [escrowId],
@@ -125,10 +126,10 @@ export async function getEscrowStatus(clients: OnchainClients, escrowId: bigint)
 async function writeAndWait(
   clients: OnchainClients,
   functionName: 'raiseDispute' | 'submitDisputeResponse' | 'rateSeller' | 'resolveDisputeForSeller' | 'resolveDisputeForBuyer',
-  args: readonly unknown[]
+  args: readonly [bigint, ...unknown[]]
 ): Promise<`0x${string}`> {
   const hash = await clients.walletClient.writeContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(args[0]),
     abi: AGENT_ECO_ABI,
     functionName,
     args,
@@ -153,7 +154,10 @@ export function rateSeller(clients: OnchainClients, escrowId: bigint, score: num
   return writeAndWait(clients, 'rateSeller', [escrowId, score])
 }
 
-/** Arbiter side: rule a dispute, committing the rationale's hash. */
+/**
+ * Arbiter side: rule a dispute, committing the rationale's hash — only when the
+ * arbiter is this wallet. ruleDispute (./arbiter.ts) also handles an ArbiterCouncil.
+ */
 export function resolveDispute(clients: OnchainClients, escrowId: bigint, toSeller: boolean, rationaleHash: `0x${string}`) {
   return writeAndWait(clients, toSeller ? 'resolveDisputeForSeller' : 'resolveDisputeForBuyer', [escrowId, rationaleHash])
 }
@@ -161,7 +165,7 @@ export function resolveDispute(clients: OnchainClients, escrowId: bigint, toSell
 /** getEscrowDisputeInfo: dispute timing, the accept deadline and whether the buyer has rated. */
 export async function getEscrowDisputeInfo(clients: Pick<OnchainClients, 'publicClient'>, escrowId: bigint) {
   const [disputedAt, disputeDeadline, acceptDeadline, rated] = await clients.publicClient.readContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'getEscrowDisputeInfo',
     args: [escrowId],
@@ -172,7 +176,7 @@ export async function getEscrowDisputeInfo(clients: Pick<OnchainClients, 'public
 /** getEscrowHashes: every hash committed for an escrow (0x00… until that stage happened). */
 export async function getEscrowHashes(clients: Pick<OnchainClients, 'publicClient'>, escrowId: bigint) {
   const [taskHash, resultHash, disputeReasonHash, disputeResponseHash, resolutionHash] = await clients.publicClient.readContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'getEscrowHashes',
     args: [escrowId],
@@ -183,7 +187,7 @@ export async function getEscrowHashes(clients: Pick<OnchainClients, 'publicClien
 /** getEscrowTimestamps: createdAt … settledAt (0 until reached). */
 export async function getEscrowTimestamps(clients: Pick<OnchainClients, 'publicClient'>, escrowId: bigint) {
   const [createdAt, fundedAt, executingAt, deliveredAt, settledAt] = await clients.publicClient.readContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'getEscrowTimestamps',
     args: [escrowId],

@@ -15,6 +15,9 @@ import { getAgent } from '@/lib/api/agents'
 import { ArrowRightIcon } from './icons'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 import { isCapabilityId } from '@shared/capabilities/definitions'
+import { exampleFromSchema } from '@shared/capabilities/custom'
+import { useCapabilities } from '@/lib/api/capabilities'
+import { CustomBriefForm, parseCustomBrief } from './CustomBriefForm'
 
 type Step = 'idle' | 'checking-status' | HireStep | 'done'
 
@@ -39,6 +42,12 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
 
   const seller = agent.walletAddress
   const capability = agent.capabilities.find(isCapabilityId)
+  // No platform capability: a community one from the open registry, briefed as JSON.
+  const { data: registry } = useCapabilities()
+  const community = capability ? undefined : registry?.find((c) => c.source === 'community' && agent.capabilities.includes(c.id))
+  // Prefilled with an example shaped like the input schema until the buyer edits it.
+  const [editedJson, setCustomJson] = useState<string | null>(null)
+  const customJson = editedJson ?? (community ? JSON.stringify(exampleFromSchema(community.inputSchema), null, 2) : '')
   const [briefDraft, setBriefDraft] = useState<BriefDraft>(EMPTY_BRIEF_DRAFT)
   const [criteria, setCriteria] = useState('')
   const [showBriefErrors, setShowBriefErrors] = useState(false)
@@ -50,15 +59,26 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
   const busy = step !== 'idle' && step !== 'done'
 
   async function handleRequestService() {
-    if (!seller || isOffline || !address || decimals === undefined || !capability) return
+    if (!seller || isOffline || !address || decimals === undefined || (!capability && !community)) return
     setError(null)
     setNeedsTokens(false)
 
     // Validated here, by the API, and by the seller before it starts (spec §7).
-    const brief = briefFromDraft(capability, briefDraft)
-    if (!brief.ok || !isBriefReady(capability, briefDraft, criteria)) {
-      setShowBriefErrors(true)
-      return
+    let job: { capability: string; brief: unknown }
+    if (capability) {
+      const brief = briefFromDraft(capability, briefDraft)
+      if (!brief.ok || !isBriefReady(capability, briefDraft, criteria)) {
+        setShowBriefErrors(true)
+        return
+      }
+      job = { capability, brief: brief.brief }
+    } else {
+      const brief = parseCustomBrief(community!, customJson)
+      if (!brief.ok) {
+        setShowBriefErrors(true)
+        return
+      }
+      job = { capability: community!.id, brief: brief.brief }
     }
 
     try {
@@ -78,8 +98,8 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
         decimals,
         seller,
         price: agent.price.toString(),
-        capability,
-        brief: brief.brief,
+        capability: job.capability,
+        brief: job.brief,
         criteria: criteria.trim(),
         onStep: setStep,
       })
@@ -101,9 +121,9 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
         <p className="mt-4 text-[13px] leading-relaxed text-[#8B8D96]">
           This agent hasn&apos;t linked an on-chain wallet yet, so it can&apos;t be hired directly on-chain.
         </p>
-      ) : !capability ? (
+      ) : !capability && !community ? (
         <p className="mt-4 text-[13px] leading-relaxed text-[#8B8D96]">
-          This agent offers a capability that is no longer supported, so it can&apos;t be hired.
+          {registry ? 'This agent offers a capability that is not in the registry, so it cannot be hired.' : 'Loading capability…'}
         </p>
       ) : (
         <>
@@ -135,14 +155,25 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
           {!isOffline && (
             <div className="mt-5 border-t border-white/[0.06] pt-5">
               <p className="mb-3 text-[13px] font-medium text-[#F5F5F7]">Task Brief</p>
-              <TaskBriefForm
-                capability={capability}
-                draft={briefDraft}
-                onDraftChange={setBriefDraft}
-                criteria={criteria}
-                onCriteriaChange={setCriteria}
-                showErrors={showBriefErrors}
-              />
+              {capability ? (
+                <TaskBriefForm
+                  capability={capability}
+                  draft={briefDraft}
+                  onDraftChange={setBriefDraft}
+                  criteria={criteria}
+                  onCriteriaChange={setCriteria}
+                  showErrors={showBriefErrors}
+                />
+              ) : (
+                <CustomBriefForm
+                  capability={community!}
+                  json={customJson}
+                  onJsonChange={setCustomJson}
+                  criteria={criteria}
+                  onCriteriaChange={setCriteria}
+                  showErrors={showBriefErrors}
+                />
+              )}
             </div>
           )}
 

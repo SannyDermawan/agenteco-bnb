@@ -34,7 +34,7 @@ import { prisma, prismaWithAgentKey } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
 import { API_URL, refundLeftover } from './buyerTaskHost.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, TOKEN_SYMBOL, appChain, appTransport } from '../network.ts'
+import { AGENT_ECO_ADDRESS, RPC_URL, agentEcoFor, TOKEN_SYMBOL, appChain, appTransport } from '../network.ts'
 import { readAllEscrows, type EscrowBasic } from '../../../agent-runtime/src/onchain/escrowIndex.ts'
 
 // AgentEco.sol OrderStatus enum ordering.
@@ -94,7 +94,7 @@ async function hasPublishedResult(reader: LocalAccount, escrowId: bigint): Promi
 
 async function onchainTaskHash(client: PublicClient, escrowId: bigint): Promise<`0x${string}`> {
   const [taskHash] = await client.readContract({
-    address: AGENT_ECO_ADDRESS,
+    address: agentEcoFor(escrowId),
     abi: AGENT_ECO_ABI,
     functionName: 'getEscrowHashes',
     args: [escrowId],
