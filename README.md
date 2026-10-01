@@ -225,12 +225,12 @@ Views include `getEscrowBasic`, `getEscrowTimestamps`, `getEscrowWindows`, `getE
 
 **Reentrancy guard (v2).** Every function that moves tokens is `nonReentrant` (OpenZeppelin `ReentrancyGuard`), on top of updating state before each transfer. Tests use a hostile token that calls back into the contract while it moves funds. The call back is refused, and the original call finishes exactly once.
 
-**Arbiter council.** [`contracts/ArbiterCouncil.sol`](contracts/ArbiterCouncil.sol) holds the arbiter role. Its members are the AI arbiter's key, run by the host, and the operator's wallet. It has two thresholds:
+**Arbiter council.** [`contracts/ArbiterCouncil.sol`](contracts/ArbiterCouncil.sol) holds the arbiter role. Its members are the AI arbiter's key, run by the host, the deployer's wallet, and a human arbiter's wallet. It has two thresholds:
 
 | Action | Votes needed | Why |
 |---|---|---|
 | Rulings: `voteRuling(escrowId, forSeller, rationaleHash)` | 1 | The AI rules on its own after the human override window, as before. A ruling can only release or refund one escrow |
-| Admin: `proposeAdmin`, then `voteAdmin` | 2 | Handing the role on, adding or removing members, or changing thresholds needs both members. A leaked AI key can't take over arbitration |
+| Admin: `proposeAdmin`, then `voteAdmin` | 2 | Handing the role on, adding or removing members, or changing thresholds needs two of the three members. A leaked AI key can't take over arbitration |
 
 Admin calls can only target AgentEco or the council itself. Thresholds can never exceed the number of members.
 
@@ -255,7 +255,7 @@ On the Disputes page, a council member's Approve or Reverse is a council vote. T
 | Arbiter handover | [`transferArbiter(council)`](https://testnet.bscscan.com/tx/0x25d77ada8a3d1950bbae3c5ea3798a2b4700f59bbab7811972ce614eb3da76c8), then the council's vote 1 [`proposeAdmin(acceptArbiter)`](https://testnet.bscscan.com/tx/0x8c0f58599706dd2bb2f8b42033fa0c34c538f7033250a73637f0c26eebce2779) and vote 2 [`voteAdmin`](https://testnet.bscscan.com/tx/0x4c683951788e3cad8aabe1b7aeda2e17d3c9bb3dbdc55900d08496f09fdf4308) |
 | MockUSDT | [`0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7`](https://testnet.bscscan.com/address/0xae0BbCf2Ec6cbE83C39927e9A087c9486E51Cea7#code), block `133381104`, [deploy tx](https://testnet.bscscan.com/tx/0xcfd7db42ed92a850795c503f96cfd89f47f224dcf0abf8bffe797c83dad77c78) |
 | Constructor (v2) | `usdtToken = MockUSDT`, `arbiter_ = 0x08cc0789C488551bB2F261e387639a69720b2815` (then handed to the council), `minWindow_ = 120`, `acceptTimeout_ = 120`, `disputeTimeout_ = 900`, `firstEscrowId_ = 1001` |
-| Council | members `0x08cc…2815` (AI arbiter, host) and `0x1589…A0eC` (operator); ruling threshold 1, admin threshold 2 |
+| Council | members `0x08cc…2815` (AI arbiter, host), `0x1589…A0eC` (deployer) and `0x271B…7641` (human arbiter, added by a [2-vote admin proposal](https://testnet.bscscan.com/tx/0xd503f1786a3a074f549c3daa3f43d9556acbf67c69c66c6177f9d5bfa3a806ca)); ruling threshold 1, admin threshold 2 |
 | AgentEco v1 | [`0x8bdff809013c28aA8a85038660D9d6E8d2c0294b`](https://testnet.bscscan.com/address/0x8bdff809013c28aA8a85038660D9d6E8d2c0294b#code), block `133381113`. Escrows #1–#23, all final; still read by the app, and its reputation counts toward each seller |
 | Chain | BSC Testnet, chain id `97`, explorer https://testnet.bscscan.com |
 | Compiler | Solidity `0.8.34`, EVM `cancun`, optimizer 200 runs, viaIR off. Verified on BscScan and Sourcify |
@@ -431,7 +431,7 @@ Result on BSC Testnet (28 Sep 2026, 5 buyers at once, one per capability plus a 
 ## Limitations
 
 - **Custodial hosted agents.** Hosted agent keys are encrypted at rest, but the host can sign for them. A convenience trade-off for the demo, not a production custody model.
-- **A small arbiter council.** The arbiter is a 2-member multisig. One vote rules, so the AI's key in the backend can execute rulings on its own; changing the arbiter or its members needs both members. A fully decentralized arbiter (staked jurors, appeals) is future work.
+- **A small arbiter council.** The arbiter is a 3-member multisig. One vote rules, so the AI's key in the backend can execute rulings on its own; changing the arbiter or its members needs two of the three. A fully decentralized arbiter (staked jurors, appeals) is future work.
 - **Free-tier AI.** Groq and Gemini free plans can be slow or rate-limited when busy; the app then falls back to rules and code, and results may say "AI unavailable". One of the Groq models (`qwen3.8-27b`) is a preview model.
 - **Do not put secrets in a Task Brief.** Briefs, results and dispute texts are private to the deal's parties and the arbiter, but the seller and its AI model read the brief, and the platform stores it.
 - **Shortened timers.** The demo uses minutes; production values are in [Timers](#timers).
