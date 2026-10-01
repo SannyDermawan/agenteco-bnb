@@ -8,7 +8,7 @@ import { getEscrowDisputeInfo, getEscrowHashes, getEscrowStatus, markDelivered, 
 import { readAllEscrows } from '../onchain/escrowIndex.ts'
 import { hashPreimage, resultHash, textHash } from '../shared/hashes.ts'
 import { isCapabilityId } from '../shared/capabilities/definitions.ts'
-import { codeOnlyResult, prepareJob, type PreparedJob } from '../capabilities/prepare.ts'
+import { mentionsAiUnavailable, prepareJob, type PreparedJob } from '../capabilities/prepare.ts'
 import { getTaskByEscrow } from '../tasksClient.ts'
 import { getEscrowResult, publishEscrowResult } from '../resultsClient.ts'
 import { getDispute, submitDisputeResponseText } from '../disputesClient.ts'
@@ -56,18 +56,17 @@ export interface SellerAgentOptions {
   category?: 'Research' | 'Data' | 'Content' | 'Automation'
   /**
    * Your work. Return the result object; it must match the capability's output
-   * schema (checked before anything is committed on-chain). Optional for
-   * platform capabilities that have a code-only result (data_analysis,
-   * crypto_market_brief, tx_explainer).
+   * schema (checked before anything is committed on-chain). Required for a
+   * community capability. For a platform capability, pass this or `ai`.
    */
   handle?: (job: Job) => Promise<Record<string, unknown>>
   /**
    * Your own model (see openAiCompatible). AgentEco gives self-hosted agents no AI:
-   * with one, a platform capability is served by the same prompts AgentEco's hosted
-   * sellers use, running on YOUR model and key, and disputes are answered by it too
-   * (unless you pass respondToDispute). Without one, a platform capability delivers
-   * only its code-computed part, marked "AI unavailable" — and translation, which
-   * has no code-only result, cannot be sold at all.
+   * a platform capability is served by the same prompts AgentEco's hosted sellers
+   * use, running on YOUR model and key, and disputes are answered by it too (unless
+   * you pass respondToDispute). The four platform capabilities need an AI: with
+   * neither `ai` nor `handle`, createSellerAgent throws. If the model fails when a
+   * job comes, nothing is delivered and the contract's timeout refunds the buyer.
    */
   ai?: AiModel
   /** Style and focus for your model's prose (≤ 500 chars) — never the output shape. */
@@ -123,11 +122,9 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
   if (!options.handle && !isCapabilityId(options.capability)) {
     throw new Error(`"${options.capability}" is a community capability — pass a handle(job) that produces its result.`)
   }
-  if (!options.handle && !options.ai && options.capability === 'translation') {
-    throw new Error('Translation needs a model: pass ai (e.g. openAiCompatible(...)) or a handle(job).')
-  }
+  // The four platform capabilities are written by an AI: bring one (or your own handler).
   if (!options.handle && !options.ai) {
-    log(`no ai and no handle: "${options.capability}" will deliver only its code-computed part, marked "AI unavailable"`)
+    throw new Error(`"${options.capability}" needs an AI: pass ai (e.g. openAiCompatible({ baseUrl, apiKey, model })) or your own handle(job).`)
   }
 
   let agentId: string | null = null
@@ -200,26 +197,20 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
         return null
       }
       job.prepared = prepared.job
-      if (!options.handle && !options.ai && !codeOnlyResult(prepared.job)) {
-        log(`escrow #${escrowId}: "${task.capability}" needs a model or a handle() — not taking it`)
-        return null
-      }
     }
     return job
   }
 
   async function work(job: Job): Promise<Record<string, unknown>> {
-    let raw: Record<string, unknown> | null = null
-    if (options.handle) {
-      raw = await options.handle(job)
-    } else {
-      if (options.ai) raw = await runPlatformJob(job.prepared!, options.ai, { criteria: job.criteria, instructions: options.instructions, log })
-      // The model failed or never answered validly: the code-computed part still goes out, like a hosted seller.
-      if (!raw) {
-        raw = codeOnlyResult(job.prepared!)
-        if (!raw) throw new Error(`${job.capability} needs the model, and it did not answer`)
-        log(`escrow #${job.escrowId}: the model did not answer — delivering the code-computed result only`)
-      }
+    // No fallback: when the model never answers, nothing is delivered (the error is retried a few
+    // times, then dropped, and the contract's timeout refunds the buyer).
+    const raw = options.handle
+      ? await options.handle(job)
+      : await runPlatformJob(job.prepared!, options.ai!, { criteria: job.criteria, instructions: options.instructions, log })
+    if (!raw) throw new Error(`${job.capability} needs the model, and it did not answer`)
+    // The API refuses this too; catching it here keeps it from being committed on-chain.
+    if (isCapabilityId(job.capability) && mentionsAiUnavailable(job.capability, raw)) {
+      throw new Error('the result says "AI unavailable" — a platform capability must be written by a model')
     }
     const capability = await resolveCapability(apiUrl, job.capability)
     const checked = capability.checkResult(raw)

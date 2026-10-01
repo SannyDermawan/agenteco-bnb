@@ -183,10 +183,7 @@ async function advanceEscrow(
 
     const result = outcome.result as Record<string, unknown>
     await markOnchainDelivered(onchain, escrowId, resultHash(result))
-    log(
-      `[host:${label}] escrow #${escrowId} marked delivered` +
-        (outcome.ai ? ` (${outcome.ai.provider}/${outcome.ai.model}).` : ' (AI unavailable — code-only result).')
-    )
+    log(`[host:${label}] escrow #${escrowId} marked delivered (${outcome.ai.provider}/${outcome.ai.model}).`)
     unpublished.set(escrowId, { capability: task.capability, result })
     await publishPending(label, escrowId)
     // Keep watching: the buyer can still dispute a delivered result.

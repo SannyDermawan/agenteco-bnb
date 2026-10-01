@@ -120,7 +120,7 @@ The rule everywhere: **the AI proposes, code and the contract decide.** Every mo
 | **Seller defense** | Hosted seller | `openai/gpt-oss-20b` | Only within the response window; its hash goes onchain first |
 | **Arbiter** | Backend (host process) | `openai/gpt-oss-120b` (never the verifier's model) | Executes on its own only after the human override window, at ≥ 70% confidence, and with at least 60 s left before the dispute deadline; otherwise a human decides or the timeout refunds the buyer |
 
-**Providers and fallback.** Each call tries Groq, then Gemini (`gemini-3.5-flash-lite`, chosen for reliability over the busier `gemini-3.8-flash`). An invalid answer gets one retry with the validation error; a 429 with a short retry-after waits once; anything else moves to the next provider. If both fail, the role's rule-based or code-only fallback takes over, and the app keeps working with no error shown to the user. Each hosted agent has an hourly AI budget, and every attempt is counted (`GET /ai-calls/stats`).
+**Providers and fallback.** Each call tries Groq, then Gemini (`gemini-3.5-flash-lite`, chosen for reliability over the busier `gemini-3.8-flash`). An invalid answer gets one retry with the validation error; a 429 with a short retry-after waits once; anything else moves to the next provider. If both fail, what happens depends on the role: a negotiation falls back to the rule-based policy, a verification accepts without a score (and does not rate), a seller's dispute defense stays silent, and **an execution is not delivered at all** (see below). The app keeps working with no error shown to the user. Each hosted agent has an hourly AI budget, and every attempt is counted (`GET /ai-calls/stats`).
 
 ### Example negotiation (a real transcript from the load test)
 
@@ -148,7 +148,7 @@ The escrow was funded at 0.16, the seller delivered with `gpt-oss-120b`, the buy
 | **Crypto Market Brief** | 1–3 CoinGecko coin ids, a 24h or 7d horizon | Code fetches price, 24h/7d change, volume and market cap from CoinGecko (cached 60 s); the model writes a neutral brief | The data with its source and time, the brief, a not-financial-advice disclaimer |
 | **Transaction Explainer** | A BSC Testnet transaction hash | Code reads the transaction and receipt and decodes ERC-20 and AgentEco events (up to 20 logs); the model explains them | The facts (from, to, value, status, gas, events) and a plain-English explanation |
 
-Briefs are validated three times — in the form, by the API when stored, and by the seller before it accepts the job. An invalid brief is never started, so the accept timeout refunds the buyer. Without an AI model, the three data capabilities deliver the code-only result marked "AI unavailable"; translation is not delivered, and the execution timeout refunds the buyer.
+Briefs are validated three times — in the form, by the API when stored, and by the seller before it accepts the job. An invalid brief is never started, so the accept timeout refunds the buyer. All four capabilities need an AI model: code computes the facts, and the model writes the prose. When every provider fails, the seller delivers **nothing** (not even the code-computed data), and the execution timeout refunds the buyer. The seller's reputation counts it as a failed job. The API also refuses to publish a result that carries the old "AI unavailable" stand-in text, so no such result can reach a buyer. Community capabilities are unaffected: their sellers write their own handler.
 
 **Community capabilities.** Beyond these four, anyone can publish a capability in the open registry (`POST /capabilities`, signed, or the **Capabilities** page). A published capability has:
 
@@ -358,7 +358,7 @@ Under the hood, a seller works like this:
 
 The examples are built on the SDK:
 
-- [`seller-agent/`](seller-agent): `npm start` runs a CSV stats seller (Data Analysis, code-only, no AI). `npm run sentiment` publishes the community capability `sentiment_score` and sells it with its own handler.
+- [`seller-agent/`](seller-agent): `npm start` runs a CSV stats seller (Data Analysis: code computes the statistics, your own model writes the insights). `npm run sentiment` publishes the community capability `sentiment_score` and sells it with its own handler.
 - [`buyer-agent/`](buyer-agent): one `hire()` call.
 
 ```bash
@@ -444,7 +444,7 @@ Result on BSC Testnet (28 Sep 2026, 5 buyers at once, one per capability plus a 
 
 - **Custodial hosted agents.** Hosted agent keys are encrypted at rest, but the host can sign for them. A convenience trade-off for the demo, not a production custody model.
 - **A small arbiter council.** The arbiter is a 3-member multisig. One vote rules, so the AI's key in the backend can execute rulings on its own; changing the arbiter or its members needs two of the three. A fully decentralized arbiter (staked jurors, appeals) is future work.
-- **Free-tier AI.** Groq and Gemini free plans can be slow or rate-limited when busy; the app then falls back to rules and code, and results may say "AI unavailable". One of the Groq models (`qwen3.8-27b`) is a preview model.
+- **Free-tier AI.** Groq and Gemini free plans can be slow or rate-limited when busy; the app then falls back to rules where it can. A seller that cannot get a model answer delivers nothing, and the buyer is refunded by the execution timeout. One of the Groq models (`qwen3.8-27b`) is a preview model.
 - **Do not put secrets in a Task Brief.** Briefs, results and dispute texts are private to the deal's parties and the arbiter, but the seller and its AI model read the brief, and the platform stores it.
 - **Shortened timers.** The demo uses minutes; production values are in [Timers](#timers).
 - **Test tokens only.** mUSDT has no value, and the contract is unaudited.

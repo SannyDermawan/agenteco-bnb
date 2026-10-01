@@ -7,6 +7,8 @@ import { agentEcoFor, appChain, appTransport } from '../network.ts'
 import { createEscrowResultSchema } from '../schemas/escrowResult.ts'
 import { guardEscrow } from '../access.ts'
 import { checkResultShape } from '../capabilityRegistry.ts'
+import { mentionsAiUnavailable } from '../../../agent-runtime/src/capabilities/prepare.ts'
+import { isCapabilityId } from '../../../agent-runtime/src/shared/capabilities/definitions.ts'
 
 export const escrowResultsRouter = Router()
 
@@ -45,6 +47,13 @@ escrowResultsRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: `This escrow is for ${task.capability}, not ${parsed.data.capability}.` })
   }
   const capability = task?.capability ?? parsed.data.capability
+
+  // A platform capability's prose is written by a model. A result that says no model answered
+  // ("AI unavailable") is not a delivery: the buyer is never shown it, and the contract's
+  // timeouts (or a dispute) decide the escrow. Checked first — it needs no chain read.
+  if (isCapabilityId(capability) && mentionsAiUnavailable(capability, result)) {
+    return res.status(400).json({ error: `A ${capability} result must be written by an AI model; "AI unavailable" results are not accepted.` })
+  }
 
   let onChainHash: `0x${string}`
   try {

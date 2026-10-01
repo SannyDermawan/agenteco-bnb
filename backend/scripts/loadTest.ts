@@ -192,14 +192,11 @@ async function main(): Promise<void> {
   // Fallbacks visible in the data each stage produced.
   let ruleMoves = 0
   let aiMoves = 0
-  let codeOnly = 0
   let unscored = 0
   for (const r of runs) {
     const orders = await api<{ negotiation: { messages: { source: string }[] } }[]>('GET', `/orders?agentId=${r.buyer.id}`)
     for (const m of orders[0]?.negotiation.messages ?? []) (m.source === 'ai' ? aiMoves++ : ruleMoves++)
     if (!r.escrowId) continue
-    const res = await fetch(`${API}/escrow-results/${r.escrowId}`, { headers: await buildAuthHeaders(owner) })
-    if (res.ok && ((await res.json()) as { resultJson: string | null }).resultJson?.includes('AI unavailable')) codeOnly++
     if (r.score === null) unscored++
   }
   const stats = (await (await fetch(`${API}/ai-calls/stats?since=${encodeURIComponent(since)}`)).json()) as {
@@ -211,7 +208,7 @@ async function main(): Promise<void> {
     console.log(`  ${task.padEnd(15)} ${Object.entries(outcomes).map(([k, v]) => `${k}=${v}`).join('  ')}`)
   }
   console.log(`Negotiation moves: ${aiMoves} by AI, ${ruleMoves} rule-based (includes buyers' fixed opening offers).`)
-  console.log(`Results delivered without AI: ${codeOnly}. Verifications without a score: ${unscored}.`)
+  console.log(`Verifications without a score: ${unscored}.`)
   process.exit(done.length === runs.length ? 0 : 1)
 }
 

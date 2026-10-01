@@ -54,13 +54,22 @@ test('translation: AI result delivered with the target language; without AI it i
   assert.match((without as { reason: string }).reason, new RegExp(AI_UNAVAILABLE))
 })
 
-test('data_analysis: code computes stats; AI-less result is the stats marked "AI unavailable"', async () => {
-  const out = await executeCapability('data_analysis', { csv: 'month,sales\n2026-01-01,10\n2026-02-01,30' }, ctx(noAI))
-  assert.equal(out.deliver, true)
-  const result = (out as { result: { stats: { numeric: { column: string; mean: number }[] }; insights: string[]; summary: string } }).result
-  assert.deepEqual(result.stats.numeric.map((c) => [c.column, c.mean]), [['sales', 20]])
-  assert.deepEqual(result.insights, [])
-  assert.match(result.summary, new RegExp(AI_UNAVAILABLE))
+test('data_analysis: code computes the stats, the model writes the prose; without AI nothing is delivered', async () => {
+  const csv = 'month,sales\n2026-01-01,10\n2026-02-01,30'
+  const withAI = await executeCapability(
+    'data_analysis',
+    { csv },
+    ctx(async () => ({ data: { insights: ['Sales averaged 20.'], summary: 'Sales rose from 10 to 30.' }, provider: 'groq', model: 'm' }) as never)
+  )
+  assert.equal(withAI.deliver, true)
+  const result = (withAI as { result: { stats: { numeric: { column: string; mean: number }[] }; insights: string[]; summary: string } }).result
+  assert.deepEqual(result.stats.numeric.map((c) => [c.column, c.mean]), [['sales', 20]]) // from code, not the model
+  assert.deepEqual(result.insights, ['Sales averaged 20.'])
+
+  // Every provider failed: not even the code-computed statistics go out.
+  const without = await executeCapability('data_analysis', { csv }, ctx(noAI))
+  assert.equal(without.deliver, false)
+  assert.match((without as { reason: string }).reason, new RegExp(AI_UNAVAILABLE))
 })
 
 test('data_analysis: a CSV over the row limit is an invalid brief', async () => {
@@ -70,19 +79,26 @@ test('data_analysis: a CSV over the row limit is an invalid brief', async () => 
   assert.match((out as { reason: string }).reason, /limit is 200/)
 })
 
-test('crypto_market_brief: live data kept, disclaimer always present, brief falls back', async () => {
+test('crypto_market_brief: live data and the disclaimer come from code; without AI nothing is delivered', async () => {
   globalThis.fetch = (async () =>
     new Response(
       JSON.stringify([
         { id: 'bitcoin', symbol: 'btc', name: 'Bitcoin', current_price: 85000, price_change_percentage_24h_in_currency: 1.2, price_change_percentage_7d_in_currency: -3.4, total_volume: 1, market_cap: 2 },
       ])
     )) as typeof fetch
-  const out = await executeCapability('crypto_market_brief', { coins: ['bitcoin'], horizon: '24h' }, ctx(noAI))
-  assert.equal(out.deliver, true)
-  const result = (out as { result: { data: { coins: { symbol: string; priceUsd: number }[] }; brief: string; disclaimer: string } }).result
+  const withAI = await executeCapability(
+    'crypto_market_brief',
+    { coins: ['bitcoin'], horizon: '24h' },
+    ctx(async () => ({ data: { brief: 'Bitcoin trades near $85,000, up 1.2% on the day.' }, provider: 'groq', model: 'm' }) as never)
+  )
+  assert.equal(withAI.deliver, true)
+  const result = (withAI as { result: { data: { coins: { symbol: string; priceUsd: number }[] }; brief: string; disclaimer: string } }).result
   assert.deepEqual(result.data.coins.map((c) => [c.symbol, c.priceUsd]), [['BTC', 85000]])
-  assert.match(result.brief, new RegExp(AI_UNAVAILABLE))
   assert.equal(result.disclaimer, NOT_FINANCIAL_ADVICE)
+
+  const without = await executeCapability('crypto_market_brief', { coins: ['bitcoin'], horizon: '24h' }, ctx(noAI))
+  assert.equal(without.deliver, false)
+  assert.match((without as { reason: string }).reason, new RegExp(AI_UNAVAILABLE))
 })
 
 test('crypto_market_brief: an unknown coin id is an invalid brief', async () => {
@@ -92,19 +108,30 @@ test('crypto_market_brief: an unknown coin id is an invalid brief', async () => 
   assert.match((out as { reason: string }).reason, /Unknown CoinGecko coin id/)
 })
 
-test('tx_explainer: facts decoded by code, explanation from AI or marked unavailable', async () => {
-  const out = await executeCapability('tx_explainer', { txHash: HASH }, ctx(noAI))
-  assert.equal(out.deliver, true)
-  const result = (out as { result: { facts: { status: string; decodedEvents: { event: string; args: Record<string, string> }[] }; explanation: string } }).result
-  assert.equal(result.facts.status, 'success')
-  assert.equal(result.facts.decodedEvents[0].event, 'Transfer')
-  assert.equal(result.facts.decodedEvents[0].args.amount, '1.5 mUSDT')
-  assert.match(result.explanation, new RegExp(AI_UNAVAILABLE))
-
+test('tx_explainer: facts decoded by code, explanation from the AI; without AI nothing is delivered', async () => {
   const withAI = await executeCapability(
     'tx_explainer',
     { txHash: HASH },
     ctx(async () => ({ data: { explanation: 'Someone sent 1.5 mUSDT.' }, provider: 'gemini', model: 'g' }) as never)
   )
-  assert.equal((withAI as { result: { explanation: string } }).result.explanation, 'Someone sent 1.5 mUSDT.')
+  assert.equal(withAI.deliver, true)
+  const result = (withAI as { result: { facts: { status: string; decodedEvents: { event: string; args: Record<string, string> }[] }; explanation: string } }).result
+  assert.equal(result.facts.status, 'success')
+  assert.equal(result.facts.decodedEvents[0].event, 'Transfer')
+  assert.equal(result.facts.decodedEvents[0].args.amount, '1.5 mUSDT')
+  assert.equal(result.explanation, 'Someone sent 1.5 mUSDT.')
+
+  const without = await executeCapability('tx_explainer', { txHash: HASH }, ctx(noAI))
+  assert.equal(without.deliver, false)
+  assert.match((without as { reason: string }).reason, new RegExp(AI_UNAVAILABLE))
+})
+
+test('an AI answer that breaks the output schema is not delivered either', async () => {
+  const tooLong = 'x'.repeat(2500) // explanation is capped at 2,000 characters
+  const out = await executeCapability(
+    'tx_explainer',
+    { txHash: HASH },
+    ctx(async () => ({ data: { explanation: tooLong }, provider: 'groq', model: 'm' }) as never)
+  )
+  assert.equal(out.deliver, false)
 })

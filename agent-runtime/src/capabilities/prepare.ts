@@ -16,10 +16,13 @@ import { buildTxFacts } from './txFacts.ts'
 
 /**
  * The code half of every capability (spec §7), shared by the hosted seller
- * (backend/src/capabilities/execute.ts adds the model on top) and the
- * standalone seller-agent (which may run without any model at all).
+ * (backend/src/capabilities/execute.ts adds the model on top) and the SDK's
+ * sellers (which bring their own model). All four capabilities need an AI: code
+ * computes the facts, the model writes the prose, and nothing is delivered
+ * without it.
  */
 
+/** The old stand-in text for "no model answered". A result carrying it is refused — see mentionsAiUnavailable. */
 export const AI_UNAVAILABLE = 'AI unavailable'
 export const NOT_FINANCIAL_ADVICE =
   'This brief summarises public market data for information only. It is not financial advice.'
@@ -76,19 +79,20 @@ export async function prepareJob(
 }
 
 /**
- * The result a seller delivers when no model is available: only the data the
- * code computed, with the prose field marked "AI unavailable". Translation has
- * no code-only result — it must not be delivered (null).
+ * The model-written fields of each platform capability. A result whose prose says
+ * "AI unavailable" is not a delivery: the seller must not commit it and the API
+ * does not publish it. (translatedText echoes the buyer's own text, so it is not
+ * scanned; the stats, data and facts are code-computed numbers.)
  */
-export function codeOnlyResult(job: PreparedJob): Record<string, unknown> | null {
-  switch (job.capability) {
-    case 'translation':
-      return null
-    case 'data_analysis':
-      return { stats: job.stats, insights: [], summary: `${AI_UNAVAILABLE} — these are the computed statistics only.` }
-    case 'crypto_market_brief':
-      return { data: job.data, brief: `${AI_UNAVAILABLE} — this is the market data only.`, disclaimer: NOT_FINANCIAL_ADVICE }
-    case 'tx_explainer':
-      return { facts: job.facts, explanation: `${AI_UNAVAILABLE} — these are the decoded facts only.` }
-  }
+const PROSE_FIELDS: Record<CapabilityId, string[]> = {
+  translation: ['notes'],
+  data_analysis: ['insights', 'summary'],
+  crypto_market_brief: ['brief'],
+  tx_explainer: ['explanation'],
+}
+
+export function mentionsAiUnavailable(capability: CapabilityId, result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false
+  const record = result as Record<string, unknown>
+  return PROSE_FIELDS[capability].some((field) => JSON.stringify(record[field] ?? '').toLowerCase().includes(AI_UNAVAILABLE.toLowerCase()))
 }

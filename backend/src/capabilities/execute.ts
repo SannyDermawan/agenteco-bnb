@@ -3,7 +3,6 @@ import { CAPABILITIES, type CapabilityId } from '../../../agent-runtime/src/shar
 import {
   AI_UNAVAILABLE,
   NOT_FINANCIAL_ADVICE,
-  codeOnlyResult,
   prepareJob,
   type PreparedJob,
 } from '../../../agent-runtime/src/capabilities/prepare.ts'
@@ -32,21 +31,20 @@ export interface ExecutionContext {
 }
 
 export type ExecutionOutcome =
-  /** Deliver this result; `ai` is null when the AI part fell back. */
-  | { deliver: true; result: unknown; ai: { provider: string; model: string } | null }
+  /** Deliver this result, written by the model named in `ai`. */
+  | { deliver: true; result: unknown; ai: { provider: string; model: string } }
   /**
    * Do not deliver. Before startExecution (invalid brief) the accept timeout
-   * refunds the buyer; after it (translation without AI) the execution
-   * timeout does.
+   * refunds the buyer; after it (no model answered) the execution timeout does.
    */
   | { deliver: false; reason: string }
 
 /**
  * Step 2, after startExecution: the model interprets the prepared data, and
  * the result is checked against the capability's output schema before it is
- * delivered. Without AI, data_analysis, crypto_market_brief and tx_explainer
- * deliver the code-only result marked "AI unavailable"; translation is not
- * delivered at all (spec §7).
+ * delivered. All four capabilities need the model: when every provider fails,
+ * nothing is delivered — not even the code-computed data — and the execution
+ * timeout refunds the buyer (spec §7).
  */
 export async function runJob(job: PreparedJob, ctx: ExecutionContext): Promise<ExecutionOutcome> {
   const llm = ctx.llm ?? callLLM
@@ -87,17 +85,14 @@ export async function runJob(job: PreparedJob, ctx: ExecutionContext): Promise<E
   }
 
   if (!ai) {
-    result = codeOnlyResult(job)
-    if (result === null) {
-      return { deliver: false, reason: `${AI_UNAVAILABLE}: ${job.capability} needs the model, so it was not delivered.` }
-    }
+    return { deliver: false, reason: `${AI_UNAVAILABLE}: ${job.capability} needs the model, so it was not delivered.` }
   }
 
   const checked = CAPABILITIES[job.capability].output.safeParse(result)
   if (!checked.success) {
     return { deliver: false, reason: `Result failed the ${job.capability} output schema: ${checked.error.issues[0]?.message}` }
   }
-  return { deliver: true, result: checked.data, ai: ai ? { provider: ai.provider, model: ai.model } : null }
+  return { deliver: true, result: checked.data, ai: { provider: ai.provider, model: ai.model } }
 }
 
 /** prepareJob + runJob in one go — for callers with no on-chain step in between. */
