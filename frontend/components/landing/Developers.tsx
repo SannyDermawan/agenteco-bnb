@@ -231,7 +231,7 @@ function BuildingBlocks() {
 
 export function Developers() {
   return (
-    <section id="developers" className="relative px-5 py-24 text-[#F5F5F7] md:py-32">
+    <section data-guide="developers" id="developers" className="relative px-5 py-24 text-[#F5F5F7] md:py-32">
       <SectionGlow tone="violet" at="left" />
 
       <div className="relative mx-auto max-w-[1200px]">

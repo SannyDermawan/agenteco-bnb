@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
-import { animate, motion, useMotionValue } from 'framer-motion'
+import { animate, motion, useAnimationControls, useMotionValue, useReducedMotion } from 'framer-motion'
 import { BrandLogo } from '@/components/BrandLogo'
 
 const NAV = [
@@ -72,6 +72,40 @@ const ICONS: Record<(typeof NAV)[number]['label'], (props: { className?: string 
 
 const PILL_SPRING = { type: 'spring', stiffness: 480, damping: 36, mass: 0.7 } as const
 
+/**
+ * The two-bot mark. It says hello once when the page opens, then every so often, and
+ * again whenever the pointer touches it: a little hop, tilting from one bot to the other.
+ */
+function MascotLogo() {
+  const reduce = useReducedMotion()
+  const controls = useAnimationControls()
+  const busy = useRef(false)
+
+  const hop = async () => {
+    if (reduce || busy.current) return
+    busy.current = true
+    await controls.start({ y: [0, -7, 0, -3, 0], rotate: [0, -7, 6, -3, 0], scale: [1, 1.1, 1, 1.04, 1], transition: { duration: 0.9, ease: 'easeOut' } })
+    busy.current = false
+  }
+
+  useEffect(() => {
+    if (reduce) return
+    const first = setTimeout(hop, 1600)
+    const again = setInterval(hop, 11000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(again)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hop only touches refs and stable controls
+  }, [reduce])
+
+  return (
+    <motion.span animate={controls} onHoverStart={hop} onTapStart={hop} className="inline-flex origin-bottom">
+      <BrandLogo className="h-[26px]" />
+    </motion.span>
+  )
+}
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -130,23 +164,12 @@ export function Navbar() {
       <nav
         className={`relative flex w-full items-center justify-between overflow-hidden rounded-full border transition-all duration-500 ease-out ${
           scrolled
-            ? 'h-[58px] max-w-[1160px] border-white/10 bg-[#0B0D14]/75 pl-2 pr-2 shadow-[0_20px_50px_-14px_rgba(0,0,0,.65)] backdrop-blur-xl md:pl-3 md:pr-2.5'
+            ? 'h-[58px] max-w-[1160px] border-white/15 bg-white/[0.03] pl-2 pr-2 shadow-[0_12px_40px_-16px_rgba(0,0,0,.45)] backdrop-blur-xl backdrop-saturate-150 md:pl-3 md:pr-2.5'
             : 'h-[68px] max-w-[1280px] border-transparent bg-transparent px-1 shadow-none backdrop-blur-none'
         }`}
       >
-        <div
-          aria-hidden
-          className={`pointer-events-none absolute inset-0 rounded-full transition-opacity duration-500 ease-out ${
-            scrolled ? 'opacity-100' : 'opacity-0'
-          }`}
-          style={{
-            background:
-              'radial-gradient(42% 160% at 14% 50%, rgba(91,95,239,.20), transparent 60%), radial-gradient(42% 160% at 86% 50%, rgba(139,92,246,.16), transparent 60%)',
-          }}
-        />
-
         <Link href="/" className="relative z-10 flex shrink-0 items-center gap-2.5 pl-1">
-          <BrandLogo className="h-[26px]" />
+          <MascotLogo />
           <span className="text-[16px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">AgentEco</span>
         </Link>
 

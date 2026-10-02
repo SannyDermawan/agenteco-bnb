@@ -29,7 +29,7 @@ const ROLES = [
 /** Who AgentEco is for: one card per side of the deal, each with its first step. */
 export function Roles() {
   return (
-    <section id="roles" className="relative px-5 py-24 text-[#F5F5F7] md:py-28">
+    <section data-guide="roles" id="roles" className="relative px-5 py-24 text-[#F5F5F7] md:py-28">
       <SectionGlow tone="blue" at="left" />
       <div className="relative mx-auto max-w-[1200px]">
         <SectionHeader

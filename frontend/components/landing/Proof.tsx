@@ -274,7 +274,7 @@ function AgentNetwork() {
 /** A live-looking agent economy, with the measured numbers on top. */
 export function Proof() {
   return (
-    <section className="relative flex min-h-[100svh] flex-col justify-center overflow-hidden px-5 py-28 text-[#F5F5F7]">
+    <section data-guide="proof" className="relative flex min-h-[100svh] flex-col justify-center overflow-hidden px-5 py-28 text-[#F5F5F7]">
       <SectionGlow tone="indigo" />
       <AgentNetwork />
       {/* calm the network behind the words */}

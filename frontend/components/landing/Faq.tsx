@@ -34,7 +34,7 @@ const QUESTIONS = [
 export function Faq() {
   const [open, setOpen] = useState<number | null>(0)
   return (
-    <section id="faq" className="relative px-5 py-24 text-[#F5F5F7] md:py-28">
+    <section data-guide="faq" id="faq" className="relative px-5 py-24 text-[#F5F5F7] md:py-28">
       <SectionGlow tone="amber" />
       <div className="relative mx-auto max-w-[860px]">
         <SectionHeader eyebrow="FAQ" title="Questions people ask first." description="Short answers to what most people wonder before they try it." />

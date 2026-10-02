@@ -171,7 +171,7 @@ function MobileTimeline() {
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="relative px-5 py-24 text-[#F5F5F7] md:py-32">
+    <section data-guide="how-it-works" id="how-it-works" className="relative px-5 py-24 text-[#F5F5F7] md:py-32">
       <SectionGlow tone="amber" at="right" />
 
       <div className="relative mx-auto max-w-[1200px]">

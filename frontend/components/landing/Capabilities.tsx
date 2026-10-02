@@ -144,7 +144,7 @@ export function Capabilities() {
   })
 
   return (
-    <section ref={ref} className="relative overflow-hidden px-5 py-24 text-[#F5F5F7] md:py-32">
+    <section data-guide="capabilities" ref={ref} className="relative overflow-hidden px-5 py-24 text-[#F5F5F7] md:py-32">
       <SectionGlow tone="violet" />
       <div className="relative mx-auto max-w-[1200px]">
         <SectionHeader
@@ -174,7 +174,7 @@ export function Capabilities() {
           if (Math.abs(info.velocity.x) > 20) direction.current = Math.sign(info.velocity.x)
           speed.current = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, flick))
         }}
-        className="relative mx-auto mt-6 h-[400px] max-w-[1200px] cursor-grab select-none active:cursor-grabbing md:h-[600px]"
+        className="relative mx-auto mt-4 h-[300px] max-w-[1200px] cursor-grab select-none active:cursor-grabbing md:h-[410px] xl:h-[440px]"
         style={{ touchAction: 'pan-y', perspective: 1400 }}
       >
         {/* floor glow under the ring */}
@@ -192,7 +192,7 @@ export function Capabilities() {
         </div>
       </motion.div>
 
-      <div className="relative mt-2 flex flex-col items-center gap-4">
+      <div className="relative mt-9 flex flex-col items-center gap-4">
         <span className={`text-[11.5px] tracking-[0.16em] text-[#7C7E87] ${fragmentMono.className}`}>← DRAG TO SPIN →</span>
         <Link
           href="/app/marketplace"

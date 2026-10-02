@@ -13,7 +13,7 @@ const STEPS = [
 /** Closing call to action — the judge flow from the MVP spec, with the hero's two robots. */
 export function FinalCta() {
   return (
-    <section className="relative overflow-hidden px-5 pb-28 pt-10 text-[#F5F5F7] md:pb-32">
+    <section data-guide="cta" className="relative overflow-hidden px-5 pb-28 pt-10 text-[#F5F5F7] md:pb-32">
       <motion.div
         custom={0}
         initial="hidden"

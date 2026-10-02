@@ -380,7 +380,7 @@ export function Product() {
   }
 
   return (
-    <section id="product" className="relative text-[#F5F5F7]">
+    <section data-guide="product" id="product" className="relative text-[#F5F5F7]">
       <SectionGlow tone="indigo" />
       <div className="px-5 pb-10 pt-24 md:pt-32">
         <SectionHeader

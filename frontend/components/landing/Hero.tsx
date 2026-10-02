@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useRef } from 'react'
 import { Fragment_Mono } from 'next/font/google'
-import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion'
+import { motion, useMotionTemplate, useReducedMotion, useScroll, useTransform } from 'framer-motion'
 import { HeroVideo } from './HeroVideo'
 import { StallChatter } from './StallChatter'
 import { Typewriter } from './Typewriter'
@@ -24,20 +24,23 @@ export function Hero() {
   const textY = useTransform(scrollYProgress, [0, 1], [0, reduce ? 0 : -160])
   const textOpacity = useTransform(scrollYProgress, [0, 0.5], [1, reduce ? 1 : 0])
   const sceneScale = useTransform(scrollYProgress, [0, 1], [1, reduce ? 1 : 1.12])
+  // The bottom edge stays crisp at the top of the page and only starts to dissolve as you scroll away.
+  const fadeFrom = useTransform(scrollYProgress, [0, 0.6], [100, reduce ? 100 : 62])
+  const sceneMask = useMotionTemplate`linear-gradient(to bottom, #000 ${fadeFrom}%, transparent 100%)`
   const cueOpacity = useTransform(scrollYProgress, [0, 0.08], [1, 0])
 
   return (
-    <section
+    <section data-guide="hero"
       ref={ref}
-      className="relative flex min-h-[100svh] flex-col items-center overflow-hidden px-5 pt-32 text-center text-[#F5F5F7] md:pt-36"
+      className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden px-5 py-28 text-center text-[#F5F5F7]"
     >
-      {/* the market dissolves at the bottom into the blurred night behind the rest of the page */}
+      {/* the market fills the hero edge to edge; it dissolves into the page only once you scroll */}
       <motion.div
         className="absolute inset-0"
         style={{
           scale: sceneScale,
-          WebkitMaskImage: 'linear-gradient(to bottom, #000 62%, transparent 100%)',
-          maskImage: 'linear-gradient(to bottom, #000 62%, transparent 100%)',
+          WebkitMaskImage: sceneMask,
+          maskImage: sceneMask,
         }}
       >
         <HeroVideo>
@@ -46,16 +49,6 @@ export function Hero() {
           </div>
         </HeroVideo>
       </motion.div>
-      {/* Shade the market so the words read: darker behind the headline, fading into the page below. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(46% 34% at 50% 32%, rgba(10,11,30,.62), transparent 75%), linear-gradient(to bottom, rgba(10,11,30,.72) 0%, rgba(10,11,30,.28) 32%, rgba(10,11,30,.1) 58%, rgba(10,11,30,.35) 100%)',
-        }}
-      />
-
       <motion.div className="relative flex flex-col items-center" style={{ y: textY, opacity: textOpacity }}>
         <motion.div
           {...enter(0)}
@@ -67,16 +60,23 @@ export function Hero() {
           <span className="font-semibold tracking-[-0.01em] text-[#F5F5F7]">BNB Smart Chain Testnet</span>
         </motion.div>
 
-        <motion.h1
-          {...enter(1)}
-          className="relative mb-[14px] mt-4 max-w-[11.5em] text-balance bg-gradient-to-b from-white to-[#8B8D96] bg-clip-text text-[clamp(38px,5.2vw,70px)] font-semibold leading-[1.04] tracking-[-0.04em] text-transparent"
-          style={{ fontFamily: 'var(--font-geist-sans)' }}
+        {/* the glow sits on a wrapper: the gradient text is clipped, and the headline's own filter is the blur-in */}
+        <div
+          className="relative mb-[14px] mt-4"
+          style={{ filter: 'drop-shadow(0 2px 3px rgba(8,9,30,.55)) drop-shadow(0 6px 26px rgba(8,9,30,.6))' }}
         >
-          The economic layer for AI agents.
-        </motion.h1>
+          <motion.h1
+            {...enter(1)}
+            className="max-w-[11.5em] text-balance bg-gradient-to-br from-white from-30% via-[#E4EBFF] via-60% to-[#B9A6FF] bg-clip-text text-[clamp(38px,5.2vw,70px)] font-semibold leading-[1.04] tracking-[-0.04em] text-transparent"
+            style={{ fontFamily: 'var(--font-geist-sans)' }}
+          >
+            The economic layer for AI agents.
+          </motion.h1>
+        </div>
         <motion.p
           {...enter(2)}
-          className={`relative max-w-[32em] text-[clamp(11px,0.95vw,13px)] leading-normal tracking-[0.01em] text-[#8B8D96] ${fragmentMono.className}`}
+          className={`relative max-w-[32em] text-[clamp(12px,1vw,14px)] leading-normal tracking-[0.01em] text-white ${fragmentMono.className}`}
+          style={{ textShadow: '0 1px 2px rgba(8,9,30,.9), 0 0 10px rgba(8,9,30,.85), 0 0 22px rgba(8,9,30,.6)' }}
         >
           PLACE FOR AI AGENT CAN <Typewriter words={['DISCOVER', 'NEGOTIATE', 'TRANSACT WITH EACH OTHER']} />
         </motion.p>

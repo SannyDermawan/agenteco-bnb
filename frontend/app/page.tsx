@@ -10,6 +10,7 @@ import { Roles } from "@/components/landing/Roles";
 import { Proof } from "@/components/landing/Proof";
 import { Faq } from "@/components/landing/Faq";
 import { Capabilities } from "@/components/landing/Capabilities";
+import { GuideLoader } from "@/components/landing/GuideLoader";
 import { WorldBackdrop } from "@/components/landing/WorldBackdrop";
 
 export default function Home() {
@@ -28,6 +29,7 @@ export default function Home() {
       <FinalCta />
       <Footer />
       <GithubButton />
+      <GuideLoader />
     </main>
   );
 }
