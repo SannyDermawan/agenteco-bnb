@@ -1,6 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
-import { motion, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform } from 'framer-motion'
+import { motion, useMotionValueEvent, useReducedMotion, useSpring, useTransform } from 'framer-motion'
+import { useElementProgress } from './scrollProgress'
 import { NegotiationSimulator } from './NegotiationSimulator'
 import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { SectionHeader, fragmentMono } from './ui'
@@ -88,7 +89,7 @@ function DesktopPipeline() {
   const [activeIndex, setActiveIndex] = useState(-1)
 
   // The line fills as the pipeline scrolls up the screen, so the money moves at your pace.
-  const { scrollYProgress } = useScroll({ target: pipelineRef, offset: ['start 85%', 'start 30%'] })
+  const scrollYProgress = useElementProgress(pipelineRef, ['start 85%', 'start 30%'])
   const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 24 })
   const dotLeft = useTransform(progress, [0, 1], ['10%', '90%'])
   const dotColor = useTransform(progress, [0, 0.5, 1], [BLUE, VIOLET, GREEN])

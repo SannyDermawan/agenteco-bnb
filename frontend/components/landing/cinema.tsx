@@ -1,7 +1,8 @@
 'use client'
 import { useRef } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useScroll, useTransform, type MotionValue } from 'framer-motion'
+import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useTransform, type MotionValue } from 'framer-motion'
+import { landingZoom, useElementProgress } from './scrollProgress'
 
 /**
  * Cinematic layer for the landing page: a stage light over each section,
@@ -45,7 +46,7 @@ export function SectionGlow({ tone = 'indigo', at = 'center' }: { tone?: keyof t
 export function WordReveal({ text, className = '', style }: { text: string; className?: string; style?: CSSProperties }) {
   const ref = useRef<HTMLHeadingElement>(null)
   const reduce = useReducedMotion()
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start 95%', 'start 58%'] })
+  const scrollYProgress = useElementProgress(ref, ['start 95%', 'start 58%'])
   const words = text.split(' ')
   return (
     <h2 ref={ref} className={className} style={style} aria-label={text}>
@@ -88,9 +89,11 @@ export function SpotlightCard({
   return (
     <div
       onPointerMove={(e) => {
+        // the card is drawn inside the zoomed part of the page: its own pixels are 1/zoom of real ones
+        const z = landingZoom()
         const r = e.currentTarget.getBoundingClientRect()
-        x.set(e.clientX - r.left)
-        y.set(e.clientY - r.top)
+        x.set((e.clientX - r.left) / z)
+        y.set((e.clientY - r.top) / z)
       }}
       onPointerLeave={() => {
         x.set(-400)

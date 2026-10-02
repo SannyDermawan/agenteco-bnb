@@ -19,6 +19,9 @@ export default function Home() {
       <WorldBackdrop />
       <Navbar />
       <Hero />
+      {/* everything below the hero is drawn at 85%, as if the browser were zoomed out a little: sections
+          fit a laptop screen instead of needing a scroll each. (See .landing-zoom in globals.css.) */}
+      <div className="landing-zoom">
       <Product />
       <Capabilities />
       <Roles />
@@ -28,6 +31,7 @@ export default function Home() {
       <Faq />
       <FinalCta />
       <Footer />
+      </div>
       <GithubButton />
       <GuideLoader />
     </main>

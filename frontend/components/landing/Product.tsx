@@ -1,7 +1,8 @@
 'use client'
 import { useRef, useState } from 'react'
 import type { JSX, ReactNode } from 'react'
-import { motion, useInView, useMotionValueEvent, useScroll, useSpring, useTransform, type MotionValue } from 'framer-motion'
+import { motion, useInView, useMotionValueEvent, useSpring, useTransform, type MotionValue } from 'framer-motion'
+import { useElementProgress } from './scrollProgress'
 import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { RobotAvatar, SectionHeader, fragmentMono } from './ui'
 import { SectionGlow } from './cinema'
@@ -345,7 +346,7 @@ function RailItem({ f, i, pos, on, onJump }: { f: Feature; i: number; pos: Motio
   // Fills while the track travels from the previous step to this one.
   const fill = useTransform(pos, i === 0 ? [0, 1] : [i - 1, i], i === 0 ? [1, 1] : [0, 1])
   return (
-    <button type="button" onClick={() => onJump(i)} className="group text-left">
+    <button type="button" data-guide-step={i} onClick={() => onJump(i)} className="group text-left">
       <div className="h-[3px] overflow-hidden rounded-full bg-white/10">
         <motion.div className="h-full origin-left rounded-full" style={{ scaleX: fill, background: f.accent }} />
       </div>
@@ -359,13 +360,13 @@ function RailItem({ f, i, pos, on, onJump }: { f: Feature; i: number; pos: Motio
 
 export function Product() {
   const track = useRef<HTMLDivElement>(null)
-  const { scrollYProgress } = useScroll({ target: track, offset: ['start start', 'end end'] })
+  const scrollYProgress = useElementProgress(track, ['start start', 'end end'])
   // A mouse wheel moves the page in notches; a firm spring turns them into one continuous glide
   // without lagging behind the scroll.
   const smooth = useSpring(scrollYProgress, { stiffness: 220, damping: 34, mass: 0.35, restDelta: 0.0001 })
   // Which step is on screen, as a number: 0 = first … N - 1 = last, fractions while sliding.
   const pos = useTransform(smooth, [SLIDE_FROM, SLIDE_TO], [0, N - 1])
-  const x = useTransform(pos, (v) => `${-v * 100}vw`)
+  const x = useTransform(pos, (v) => `calc(var(--vwz) * ${-v * 100})`)
   const [active, setActive] = useState(0)
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     const p = ((v - SLIDE_FROM) / (SLIDE_TO - SLIDE_FROM)) * (N - 1)
@@ -376,7 +377,7 @@ export function Product() {
     const el = track.current
     if (!el) return
     const top = el.getBoundingClientRect().top + window.scrollY
-    window.scrollTo({ top: top + (el.offsetHeight - window.innerHeight) * progressOf(i), behavior: 'smooth' })
+    window.scrollTo({ top: top + (el.getBoundingClientRect().height - window.innerHeight) * progressOf(i), behavior: 'smooth' })
   }
 
   return (
@@ -391,8 +392,8 @@ export function Product() {
       </div>
 
       {/* Desktop: the section pins and the four steps slide past, one screen each. */}
-      <div ref={track} className="relative hidden md:block" style={{ height: `${N * 100}vh` }}>
-        <div className="sticky top-0 flex h-screen flex-col overflow-hidden pb-6 pt-[104px]">
+      <div ref={track} data-guide-focus="steps" className="relative hidden md:block" style={{ height: `calc(var(--vhz) * ${N * 100})` }}>
+        <div className="sticky top-0 flex h-[calc(var(--vhz)*100)] flex-col overflow-hidden pb-6 pt-[104px]">
           {/* the light behind the track takes the colour of the step you're on */}
           {FEATURES.map((f, i) => (
             <motion.div
@@ -410,7 +411,7 @@ export function Product() {
           <Rail pos={pos} active={active} onJump={jump} />
           <motion.div className="flex min-h-0 flex-1" style={{ x }}>
             {FEATURES.map((f, i) => (
-              <div key={f.tab} className="w-screen shrink-0">
+              <div key={f.tab} className="w-[calc(var(--vwz)*100)] shrink-0">
                 <StepPanel f={f} i={i} pos={pos} />
               </div>
             ))}

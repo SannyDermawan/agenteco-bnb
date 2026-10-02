@@ -7,7 +7,7 @@ import { fadeUp, REVEAL_VIEWPORT } from './scrollReveal'
 import { RobotAvatar, formatUsdt, fragmentMono } from './ui'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 
-const STEP_MS = 1500
+const STEP_MS = 650
 
 function Slider({
   label,
@@ -113,7 +113,10 @@ function Bubble({ round, index }: { round: SimRound; index: number }) {
  * outcome. Remounted (via `key`) whenever the inputs change or on Replay, so
  * it always starts from the first round.
  */
-function Playback({ result, listedPrice, play }: { result: SimResult; listedPrice: number; play: boolean }) {
+/** Fired on window when a run finishes, so the landing page's guide can react to it. */
+export type NegotiationFinished = { kind: 'deal' | 'no-deal'; price?: number; byUser: boolean }
+
+function Playback({ result, listedPrice, play, byUser }: { result: SimResult; listedPrice: number; play: boolean; byUser: boolean }) {
   const reduce = useReducedMotion()
   const rounds = result.kind === 'skipped' ? NO_ROUNDS : result.rounds
   const [shown, setShown] = useState(reduce ? rounds.length : 0)
@@ -121,11 +124,17 @@ function Playback({ result, listedPrice, play }: { result: SimResult; listedPric
   useEffect(() => {
     // Hold still until the card is on screen, so the visitor sees it start.
     if (reduce || !play) return
-    const timers = rounds.map((_, i) => setTimeout(() => setShown(i + 1), 400 + i * STEP_MS))
+    const timers = rounds.map((_, i) => setTimeout(() => setShown(i + 1), 250 + i * STEP_MS))
     return () => timers.forEach(clearTimeout)
   }, [rounds, reduce, play])
 
   const finished = shown >= rounds.length
+
+  useEffect(() => {
+    if (!play || !finished || result.kind === 'skipped') return
+    const detail: NegotiationFinished = { kind: result.kind, price: result.kind === 'deal' ? result.price : undefined, byUser }
+    window.dispatchEvent(new CustomEvent('agenteco:negotiation', { detail }))
+  }, [play, finished, result, byUser])
 
   return (
     <>
@@ -183,6 +192,12 @@ export function NegotiationSimulator() {
   const [sellerFloor, setSellerFloor] = useState(0.24)
   const [buyerBudget, setBuyerBudget] = useState(1)
   const [runId, setRunId] = useState(0)
+  // Whether the visitor has moved a slider or pressed Replay (rather than watching the first run).
+  const [byUser, setByUser] = useState(false)
+  const touched = <T,>(set: (v: T) => void) => (v: T) => {
+    setByUser(true)
+    set(v)
+  }
   // The negotiation plays when this pane is scrolled into view, not when the page loads.
   const paneRef = useRef<HTMLDivElement>(null)
   const seen = useInView(paneRef, { once: true, amount: 0.45 })
@@ -224,14 +239,14 @@ export function NegotiationSimulator() {
               <div className="flex items-center gap-2 text-[12.5px] font-medium text-[#F5F5F7]">
                 <RobotAvatar role="seller" size={22} /> Seller agent
               </div>
-              <Slider label="Listed price" value={sellerPrice} min={0.1} max={1} onChange={setSellerPrice} accent="#8B5CF6" />
-              <Slider label="Won't go below" value={floor} min={0.05} max={sellerPrice} onChange={setSellerFloor} accent="#8B5CF6" />
+              <Slider label="Listed price" value={sellerPrice} min={0.1} max={1} onChange={touched(setSellerPrice)} accent="#8B5CF6" />
+              <Slider label="Won't go below" value={floor} min={0.05} max={sellerPrice} onChange={touched(setSellerFloor)} accent="#8B5CF6" />
             </div>
             <div className="space-y-4 rounded-2xl border border-[#4F7CFF]/20 bg-[#4F7CFF]/[0.04] p-4">
               <div className="flex items-center gap-2 text-[12.5px] font-medium text-[#F5F5F7]">
                 <RobotAvatar role="buyer" size={22} /> Buyer agent
               </div>
-              <Slider label="Max budget" value={buyerBudget} min={0.05} max={1.5} onChange={setBuyerBudget} accent="#4F7CFF" />
+              <Slider label="Max budget" value={buyerBudget} min={0.05} max={1.5} onChange={touched(setBuyerBudget)} accent="#4F7CFF" />
             </div>
           </div>
         </div>
@@ -242,7 +257,10 @@ export function NegotiationSimulator() {
             <button
               suppressHydrationWarning
               type="button"
-              onClick={() => setRunId((n) => n + 1)}
+              onClick={() => {
+                setByUser(true)
+                setRunId((n) => n + 1)
+              }}
               className="rounded-full border border-white/10 px-3 py-1 text-[12px] text-[#A3A5AE] transition hover:border-white/25 hover:text-[#F5F5F7]"
             >
               ↻ Replay
@@ -254,6 +272,7 @@ export function NegotiationSimulator() {
             result={result}
             listedPrice={sellerPrice}
             play={seen}
+            byUser={byUser}
           />
         </div>
       </div>

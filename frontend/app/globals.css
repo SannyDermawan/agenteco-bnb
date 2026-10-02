@@ -51,6 +51,25 @@ body {
   }
 }
 
+/* Landing page, below the hero: drawn at 85% on tablets and up (like a browser zoomed to 85%). CSS zoom
+   scales everything but leaves vw/vh at their normal size, so --vwz / --vhz / --svhz are those units divided
+   by the zoom: "100 * var(--vhz)" is exactly one screen tall again. --z is also read by scrollProgress.ts. */
+.landing-zoom {
+  --z: 1;
+  --vwz: 1vw;
+  --vhz: 1vh;
+  --svhz: 1svh;
+  zoom: var(--z);
+}
+@media (min-width: 768px) {
+  .landing-zoom {
+    --z: 0.85;
+    --vwz: calc(1vw / 0.85);
+    --vhz: calc(1vh / 0.85);
+    --svhz: calc(1svh / 0.85);
+  }
+}
+
 /* Hero video stage: centred on wide screens; on narrow ones the frame shifts so the robot
    stalls on the left, not the dark street in the middle, are what you see. */
 .hero-stage {

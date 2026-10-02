@@ -15,6 +15,7 @@ export function FinalCta() {
   return (
     <section data-guide="cta" className="relative overflow-hidden px-5 pb-28 pt-10 text-[#F5F5F7] md:pb-32">
       <motion.div
+        data-guide-focus="cta"
         custom={0}
         initial="hidden"
         whileInView="show"
