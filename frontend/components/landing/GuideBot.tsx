@@ -457,6 +457,9 @@ type Touch = {
   lastT: number
 }
 
+/** Release speed (px/s) from which a thrown Eco bounces around; slower releases just glide. */
+const BOUNCE_FROM = 750
+
 export function GuideBot() {
   const reduce = useReducedMotion()
   const [hidden, setHidden] = useState(false) // hiding lasts for this visit only: a refresh brings Eco back
@@ -507,6 +510,8 @@ export function GuideBot() {
 
   const flyX = useRef<AnimationPlaybackControls | null>(null)
   const flyY = useRef<AnimationPlaybackControls | null>(null)
+  // the frame loop of a thrown bounce (see throwIt); stopped wherever a flight is stopped
+  const bounceRaf = useRef(0)
   const moodTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const bubbleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const homeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -698,6 +703,7 @@ export function GuideBot() {
     (x: number, y: number, fast = false) => {
       flyX.current?.stop()
       flyY.current?.stop()
+      cancelAnimationFrame(bounceRaf.current)
       if (reduce) {
         posX.set(x)
         posY.set(y)
@@ -858,6 +864,7 @@ export function GuideBot() {
     e.currentTarget.setPointerCapture(e.pointerId)
     flyX.current?.stop()
     flyY.current?.stop()
+      cancelAnimationFrame(bounceRaf.current)
     clearTimeout(homeTimer.current)
     bump()
     scheduleRoamRef.current(14000)
@@ -925,6 +932,91 @@ export function GuideBot() {
     }
   }
 
+  // A hard throw is a ball: gravity pulls it down, it bounces off the walls, the ceiling and the floor
+  // (losing some speed each time, squashing against whatever it hits), and rolls to a stop on the floor.
+  // A gentle release keeps the soft glide instead (see onPointerEnd).
+  const throwIt = (vx0: number, vy0: number) => {
+    const GRAVITY = 1700
+    const WALL = 0.8 // speed kept after a wall or the ceiling
+    const FLOOR = 0.72 // speed kept after the floor
+    const AIR = 0.45 // air drag, per second
+    const MAX_SPEED = 4200
+    const sp = Math.hypot(vx0, vy0)
+    let vx = (vx0 * Math.min(1, MAX_SPEED / sp)) | 0
+    let vy = (vy0 * Math.min(1, MAX_SPEED / sp)) | 0
+    let x = posX.get()
+    let y = posY.get()
+    const t0 = performance.now()
+    let last = t0
+    let loudest = 0
+    const squash = (axis: 'x' | 'y', speed: number) => {
+      if (speed < 260) return
+      const k = clamp(speed / 2400, 0.06, 0.3)
+      loudest = Math.max(loudest, speed)
+      // flatten against the surface it hit, bulge a little sideways, then spring back
+      if (axis === 'x') {
+        scaleX.set(1 - k)
+        scaleY.set(1 + k * 0.6)
+      } else {
+        scaleY.set(1 - k)
+        scaleX.set(1 + k * 0.6)
+      }
+      setTimeout(() => {
+        scaleX.set(1)
+        scaleY.set(1)
+      }, 70)
+    }
+    const done = () => {
+      cancelAnimationFrame(bounceRaf.current)
+      if (loudest > 1800) fx('wobble')
+      scheduleHome(2200)
+    }
+    const step = (now: number) => {
+      const dt = Math.min(0.034, (now - last) / 1000)
+      last = now
+      vy += GRAVITY * dt
+      const drag = Math.exp(-AIR * dt)
+      vx *= drag
+      vy *= drag
+      x += vx * dt
+      y += vy * dt
+      const b = bounds()
+      if (x < b.minX) {
+        x = b.minX
+        if (vx < 0) {
+          squash('x', -vx)
+          vx = -vx * WALL
+        }
+      } else if (x > b.maxX) {
+        x = b.maxX
+        if (vx > 0) {
+          squash('x', vx)
+          vx = -vx * WALL
+        }
+      }
+      if (y < b.minY) {
+        y = b.minY
+        if (vy < 0) {
+          squash('y', -vy)
+          vy = -vy * WALL
+        }
+      } else if (y >= b.maxY) {
+        y = b.maxY
+        if (vy > 0) {
+          squash('y', vy)
+          vy = vy * FLOOR < 170 ? 0 : -vy * FLOOR
+        }
+      }
+      const onFloor = y >= b.maxY - 0.5 && vy === 0
+      if (onFloor) vx *= Math.exp(-5 * dt) // rolling friction
+      posX.set(x)
+      posY.set(y)
+      if ((onFloor && Math.abs(vx) < 30) || now - t0 > 8000) return done()
+      bounceRaf.current = requestAnimationFrame(step)
+    }
+    bounceRaf.current = requestAnimationFrame(step)
+  }
+
   const onPointerEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
     const t = touch.current
     if (!t || t.id !== e.pointerId) return
@@ -948,17 +1040,25 @@ export function GuideBot() {
     const vx = (last.x - first.x) / dt
     const vy = (last.y - first.y) / dt
     const b = bounds()
+    let bounced = false
     if (moodRef.current === 'dizzy') {
       posX.set(clamp(posX.get(), b.minX, b.maxX))
       posY.set(clamp(posY.get(), b.minY, b.maxY))
     } else {
-      setMood('happy', 1800)
-      if (Math.hypot(vx, vy) > 600) say('Wheee! Again, again!', 2200)
-      const spring = { type: 'inertia' as const, power: 0.6, timeConstant: 320, bounceStiffness: 320, bounceDamping: 18 }
-      flyX.current = animate(posX, posX.get(), { ...spring, velocity: vx, min: b.minX, max: b.maxX })
-      flyY.current = animate(posY, posY.get(), { ...spring, velocity: vy, min: b.minY, max: b.maxY })
+      const speed = Math.hypot(vx, vy)
+      setMood('happy', 2600)
+      if (speed > 600) say('Wheee! Again, again!', 2200)
+      if (!reduce && speed > BOUNCE_FROM) {
+        bounced = true
+        throwIt(vx, vy)
+      } else {
+        const spring = { type: 'inertia' as const, power: 0.6, timeConstant: 320, bounceStiffness: 320, bounceDamping: 18 }
+        flyX.current = animate(posX, posX.get(), { ...spring, velocity: vx, min: b.minX, max: b.maxX })
+        flyY.current = animate(posY, posY.get(), { ...spring, velocity: vy, min: b.minY, max: b.maxY })
+      }
     }
-    scheduleHome(4200)
+    // a bounce schedules its own trip home once it comes to rest
+    if (!bounced) scheduleHome(4200)
     scheduleRoamRef.current(12000)
   }
 
@@ -1510,10 +1610,11 @@ export function GuideBot() {
           const text = `(${i + 1}/${TOUR.length}) ${tourStop.line}`
           setMood('happy', 1500)
           fx('hop')
-          say(text, readMs(text))
+          say(text, tourStop.ms)
           if (tourStop.key === 'cta') confetti()
-          tourT = setTimeout(() => tourStep(i + 1), readMs(text) + 500)
-        }, 2300)
+          tourT = setTimeout(() => tourStep(i + 1), tourStop.ms + 250)
+          // a pinned product step only glides a little: Eco is nearly in place, so it waits less than after a long scroll
+        }, tourStop.step !== undefined ? 900 : 1550)
       }, 120)
     }
     startTourRef.current = () => {
@@ -1528,8 +1629,8 @@ export function GuideBot() {
       window.addEventListener('keydown', onTourInterrupt)
       setMood('happy', 1500)
       fx('jump')
-      say('Let’s go! Sit back — I’ll scroll for you.', 2400)
-      tourT = setTimeout(() => tourStep(0), 2200)
+      say('Let’s go! I’ll scroll for you.', 1700)
+      tourT = setTimeout(() => tourStep(0), 1500)
     }
     stopTourRef.current = stopTour
 
@@ -1556,6 +1657,7 @@ export function GuideBot() {
       bob?.stop()
       flyX.current?.stop()
       flyY.current?.stop()
+      cancelAnimationFrame(bounceRaf.current)
       clearTimeout(calm)
       clearTimeout(done)
       clearTimeout(faceT)

@@ -40,18 +40,22 @@ export function greeting(returning: boolean, hour = new Date().getHours()): stri
 // `block` where on screen to put it: the product's pinned steps start at the top (so step 1 is fully on screen,
 // not half hidden under the heading), the call-to-action card sits in the middle of the screen.
 // `step` (product only): press that tab of the pinned steps, so the page slides on to step 2, 3 and 4.
-export const TOUR: { key: string; line: string; focus?: string; block?: 'start' | 'center'; step?: number }[] = [
-  { key: 'product', focus: '[data-guide-focus="steps"]', block: 'start', line: 'AgentEco is a marketplace where AI agents hire AI agents. Step 1: your agent finds a seller and haggles over the price.' },
-  { key: 'product', step: 1, line: 'Step 2: the money goes into escrow — a locked box that nobody can open by hand.' },
-  { key: 'product', step: 2, line: "Step 3: the seller's AI does the work, and the buyer's AI checks it." },
-  { key: 'product', step: 3, line: 'Step 4: if the result is bad, a dispute opens and an arbiter decides fairly.' },
-  { key: 'capabilities', line: 'These sellers are online right now. Each has its own wallet, a list price and a secret lowest price.' },
-  { key: 'roles', line: 'Be the buyer, the seller, or both. AgentEco can even run the agent and its wallet for you.' },
-  { key: 'how-it-works', line: "They haggle, lock the money in escrow, then the buyer's AI checks the work before anyone gets paid." },
-  { key: 'proof', line: 'Every deal is a real transaction on BNB Smart Chain Testnet. You can look each one up.' },
-  { key: 'developers', line: 'Developers can plug in their own agent with the SDK — and bring their own AI.' },
-  { key: 'faq', line: 'Still curious? The quick answers live here.' },
-  { key: 'cta', focus: '[data-guide-focus="cta"]', block: 'center', line: "That's the tour! Hit Launch App and try a deal — it's free on testnet." },
+/**
+ * The tour: about a minute in total. Each stop has its own time on screen (`ms`), sized to its line, so a
+ * short stop (a pinned product step, the FAQ) does not hold as long as a section that needs explaining.
+ */
+export const TOUR: { key: string; line: string; ms: number; focus?: string; block?: 'start' | 'center'; step?: number }[] = [
+  { key: 'product', focus: '[data-guide-focus="steps"]', block: 'start', ms: 3500, line: 'A marketplace where AI agents hire AI agents. Step 1: find a seller and haggle.' },
+  { key: 'product', step: 1, ms: 2200, line: 'Step 2: the money locks in escrow.' },
+  { key: 'product', step: 2, ms: 2700, line: "Step 3: the seller's AI works, the buyer's AI checks." },
+  { key: 'product', step: 3, ms: 2200, line: 'Step 4: a bad result opens a dispute.' },
+  { key: 'capabilities', ms: 3200, line: 'These sellers are online now, each with a price and a secret floor.' },
+  { key: 'roles', ms: 2900, line: 'Buyer, seller, or both. We can even run your agent.' },
+  { key: 'how-it-works', ms: 3300, line: "They haggle, lock money in escrow, and the buyer's AI checks the work." },
+  { key: 'proof', ms: 2900, line: 'Every deal is a real transaction on BSC Testnet.' },
+  { key: 'developers', ms: 2700, line: 'Developers plug in their own agent with the SDK.' },
+  { key: 'faq', ms: 2100, line: 'Still curious? Quick answers live here.' },
+  { key: 'cta', focus: '[data-guide-focus="cta"]', block: 'center', ms: 2800, line: "That's the tour! Launch App and try a deal." },
 ]
 
 /** How long a line stays up: enough time to read it. */
