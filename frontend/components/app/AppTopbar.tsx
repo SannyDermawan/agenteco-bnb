@@ -12,7 +12,9 @@ const TITLES: Record<string, string> = {
   '/app/marketplace': 'Marketplace',
   '/app/capabilities': 'Capabilities',
   '/app/agents': 'My Agents',
-  '/app/create-agent': 'Create Agent',
+  '/app/create-agent': 'Create Agent - Demo',
+  '/app/register-agent': 'Register Own Agent',
+  '/app/disputes': 'Disputes',
   '/app/orders': 'Orders',
   '/app/activity': 'Agent Activity',
 }

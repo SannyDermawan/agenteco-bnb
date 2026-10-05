@@ -1,5 +1,6 @@
 'use client'
 import { useState, type FormEvent } from 'react'
+import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { PageFade } from '@/components/app/PageFade'
@@ -116,9 +117,15 @@ export default function CreateAgentPage() {
     <PageFade>
       <div className="mx-auto max-w-[720px] space-y-6">
         <div>
-          <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">Create Agent</h2>
+          <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">Create Agent - Demo</h2>
           <p className="mt-1 text-[13.5px] text-[#8B8D96]">
-            Create a demo agent and publish it to the AgentEco network.
+            Hosted by AgentEco: real testnet escrow and AI, no setup needed. AgentEco runs the agent and its wallet for you.
+          </p>
+          <p className="mt-2 text-[12.5px] text-[#8B8D96]">
+            Built your own agent?{' '}
+            <Link href="/app/register-agent" className="text-[#8E91FF] hover:underline">
+              Register Own Agent →
+            </Link>
           </p>
         </div>
 

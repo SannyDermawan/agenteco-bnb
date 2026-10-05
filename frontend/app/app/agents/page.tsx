@@ -10,6 +10,7 @@ import { BrandMarkIcon, CreateAgentIcon, ArrowRightIcon, TrashIcon } from '@/com
 import { PageFade } from '@/components/app/PageFade'
 import type { AgentStatusValue } from '@/lib/agenteco-data'
 import { deleteAgent, listAgents, updateAgent, type ApiAgent, type HostedTaskStatus } from '@/lib/api/agents'
+import { DelistedBadge } from '@/components/app/moderation/ListingBadges'
 import { TOKEN_SYMBOL, NATIVE_SYMBOL } from '@/lib/web3/network'
 
 const TASK_STATUS_LABEL: Record<HostedTaskStatus, string> = {
@@ -108,7 +109,7 @@ export default function MyAgentsPage() {
             className="flex items-center gap-1.5 rounded-xl bg-[#5B5FEF] px-4 py-2.5 text-[13px] font-medium text-white transition hover:brightness-110"
           >
             <CreateAgentIcon className="h-4 w-4" />
-            Create Agent
+            Create Agent - Demo
           </Link>
         </div>
 
@@ -129,7 +130,9 @@ export default function MyAgentsPage() {
                     </span>
                     <div className="flex items-center gap-2.5">
                       {/* A buyer's toggle is Pause/Resume, and only means something while its task is running. */}
-                      {(agent.role === 'seller' || agent.taskStatus === 'active') && (
+                      {agent.role === 'seller' && agent.taskStatus === null ? (
+                        <AgentStatus status={agent.isOnline ? 'online' : 'offline'} />
+                      ) : (agent.role === 'seller' || agent.taskStatus === 'active') && (
                         <>
                           <AgentStatus
                             status={agent.isOnline ? 'online' : 'offline'}
@@ -156,14 +159,28 @@ export default function MyAgentsPage() {
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{agent.name}</h3>
                     {agent.taskStatus && <TaskStatusBadge status={agent.taskStatus} />}
+                    {agent.delistedAt && <DelistedBadge />}
                   </div>
                   <div className="text-[12.5px] text-[#8B8D96] capitalize">
                     {agent.role} agent {agent.service ? `· ${agent.service}` : ''}
                   </div>
                   <p className="mt-2.5 text-[12.5px] leading-relaxed text-[#8B8D96]">{agent.description}</p>
                   <div className="mt-3 text-[11.5px] text-[#8B8D96]">
-                    {agent.role === 'buyer' && agent.taskStatus ? `Budget ${Number(agent.maxBudget ?? 0).toFixed(2)} ${TOKEN_SYMBOL}` : `${Number(agent.price).toFixed(2)} USDT`}
+                    {agent.role === 'buyer' && agent.taskStatus ? `Budget ${Number(agent.maxBudget ?? 0).toFixed(2)} ${TOKEN_SYMBOL}` : `${Number(agent.price).toFixed(2)} ${TOKEN_SYMBOL}`}
                   </div>
+                  {agent.role === 'seller' && agent.taskStatus === null && (
+                    <Link
+                      href={`/app/register-agent?agent=${agent.id}`}
+                      className="mt-3 flex items-center justify-center rounded-xl border border-white/[0.08] bg-[#11141B] py-2 text-[12.5px] font-medium text-[#F5F5F7] transition hover:border-[#5B5FEF]/40"
+                    >
+                      {agent.isOnline ? 'Self-hosted · connection details' : 'Self-hosted · connect your agent'}
+                    </Link>
+                  )}
+                  {agent.delistedAt && (
+                    <Link href={`/app/agents/${agent.id}`} className="mt-2 block text-center text-[12px] text-[#F87171] hover:underline">
+                      Delisted by the council · see why and appeal
+                    </Link>
+                  )}
                   {agent.taskStatus === 'awaiting_deposit' && (
                     <Link
                       href={`/app/agents/${agent.id}/activate`}

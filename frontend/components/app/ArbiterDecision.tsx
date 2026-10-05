@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { readContract, waitForTransactionReceipt, writeContract } from 'wagmi/actions'
 import { rationaleHash, type RationaleInput } from '@shared/hashes'
 import { wagmiConfig } from '@/lib/web3/config'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, ARBITER_COUNCIL_ABI, agentEcoFor } from '@/lib/web3/abi'
+import { AGENT_ECO_ABI, ARBITER_COUNCIL_ABI, agentEcoFor } from '@/lib/web3/abi'
 import { useArbiterCouncil } from '@/lib/web3/hooks'
 import { submitDisputeResolution, type ApiDispute } from '@/lib/api/disputes'
 
@@ -22,9 +22,10 @@ const label = (v: Verdict) => (v === 'seller' ? 'Release to seller' : 'Refund bu
  * rationaleHash(verdict, confidence, rationale, "arbiter-manual") on-chain,
  * then posts the rationale so anyone can re-hash it.
  *
- * When the arbiter is an ArbiterCouncil (AgentEco v2), the ruling is this
+ * When the arbiter is an ArbiterCouncil (from AgentEco v2), the ruling is this
  * member's vote: it executes when it reaches the council's ruling threshold,
- * otherwise it waits for another member to vote the same ruling.
+ * otherwise it waits for another member to vote the same ruling. Each
+ * deployment has its own council; the escrow's own deployment decides.
  */
 export function ArbiterDecision({ escrowId, dispute }: { escrowId: bigint; dispute: ApiDispute | undefined }) {
   const queryClient = useQueryClient()
@@ -35,9 +36,8 @@ export function ArbiterDecision({ escrowId, dispute }: { escrowId: bigint; dispu
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  // Only the current deployment's arbiter is a council; v1 escrows keep their wallet arbiter.
-  const councilInfo = useArbiterCouncil()
-  const council = agentEcoFor(escrowId) === AGENT_ECO_ADDRESS ? councilInfo : null
+  // The arbiter of the deployment holding this escrow: v3's or v2's council, or v1's wallet.
+  const council = useArbiterCouncil(escrowId)
 
   async function rule(input: RationaleInput) {
     setError(null)
@@ -61,7 +61,7 @@ export function ArbiterDecision({ escrowId, dispute }: { escrowId: bigint; dispu
       setBusy('Waiting for the transaction…')
       await waitForTransactionReceipt(wagmiConfig, { hash })
       if (council) {
-        const status = await readContract(wagmiConfig, { address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI, functionName: 'getEscrowStatus', args: [escrowId] })
+        const status = await readContract(wagmiConfig, { address: agentEcoFor(escrowId), abi: AGENT_ECO_ABI, functionName: 'getEscrowStatus', args: [escrowId] })
         if (Number(status) === 4) {
           // Still DISPUTED: the vote is in, the ruling needs more members.
           setNote(`Your vote is recorded. The ruling executes once ${council.rulingThreshold} council members vote for it.`)

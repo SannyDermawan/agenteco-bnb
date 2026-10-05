@@ -13,6 +13,7 @@ import { hashPreimage, textHash } from '../shared/hashes.ts'
 import { resolveCapability } from './capability.ts'
 import { scoreWithAi, type AiModel } from './ai.ts'
 import { DEFAULT_API_URL, type Logger, consoleLogger, sleep } from './common.ts'
+import { checkDecision, type Offer, type OfferDecision } from './seller.ts'
 
 export type Review =
   | { accept: true; /** Optional on-chain rating for the seller, 1–100. */ rating?: number }
@@ -43,10 +44,18 @@ export interface HireOptions {
   ai?: AiModel
   /**
    * Decide on the delivered result (already checked against the output schema
-   * and the on-chain hash). Default: your `ai` verifier when given, else accept.
-   * Rejecting raises a dispute.
+   * and the on-chain hash). Rejecting raises a dispute. Pass `review` or `ai`:
+   * hire() never pays for a result nobody checked. To accept anything that fits
+   * the schema, say so explicitly: `review: () => ({ accept: true })`.
    */
   review?: (result: Record<string, unknown>) => Promise<Review> | Review
+  /**
+   * Decide each counter-offer from the seller yourself (your own rules or model).
+   * `offer.price` is the seller's latest price and `offer.listPrice` its listing.
+   * Without it, the default policy opens at half the listing and concedes toward
+   * min(maxBudget, listing). Never accept above `maxBudget`: hire() refuses to.
+   */
+  onOffer?: (offer: Offer) => Promise<OfferDecision> | OfferDecision
   /** Name of the buyer agent in the registry. Default "SDK buyer". */
   name?: string
   /** Give up waiting for a deal or a delivery after this long. Default 20 minutes. */
@@ -86,6 +95,9 @@ export async function hire(options: HireOptions): Promise<HireResult> {
   const log = options.log ?? consoleLogger(name)
   const pollMs = options.pollMs ?? 3000
   const deadline = Date.now() + (options.timeoutMs ?? 20 * 60_000)
+  if (!options.review && !options.ai) {
+    throw new Error('Pass review(result) or ai (your own model): hire() never pays for a result nobody checked. To accept anything that fits the schema: review: () => ({ accept: true }).')
+  }
   const onchain = createOnchainClients(options.privateKey, RPC_URL)
   const account = onchain.account
   const waitStep = async (what: string) => {
@@ -143,15 +155,48 @@ export async function hire(options: HireOptions): Promise<HireResult> {
     negotiation = open.find((n) => n.id === negotiation.id) ?? negotiation
     if (!isMyTurn(negotiation, 'buyer')) continue
     const offered = Number(negotiation.messages[negotiation.messages.length - 1].price)
-    const decision = policy.decideOnOffer(offered, countOffersBySide(negotiation, 'buyer'))
+    const countersSoFar = countOffersBySide(negotiation, 'buyer')
+    let decision: OfferDecision
+    let source: 'rule' | 'agent' = 'rule'
+    if (options.onOffer) {
+      try {
+        decision = checkDecision(
+          await options.onOffer({
+            negotiationId: negotiation.id,
+            capability: options.capability,
+            buyerAgentId: buyerAgent.id,
+            price: offered,
+            listPrice: listing,
+            countersSoFar,
+            history: negotiation.messages.map((m) => ({ side: m.side, action: m.action, price: m.price === null ? null : Number(m.price), reason: m.reason ?? null })),
+          }),
+          offered,
+          'buyer'
+        )
+      } catch (error) {
+        log(`onOffer failed (${(error as Error).message}) — will retry`)
+        continue
+      }
+      // The budget is a hard limit, whatever the hook decides.
+      if (decision.action === 'accept' && offered > options.maxBudget) decision = { action: 'reject', reason: decision.reason }
+      if (decision.action === 'counter' && decision.price > options.maxBudget) {
+        log(`onOffer countered ${decision.price}, above maxBudget ${options.maxBudget} — will retry`)
+        continue
+      }
+      source = 'agent'
+    } else {
+      decision = policy.decideOnOffer(offered, countersSoFar)
+    }
     log(`seller asks ${offered} → ${decision.action}${decision.action === 'counter' ? ` ${decision.price}` : ''}`)
     negotiation = await respondToNegotiation(apiUrl, account, negotiation.id, {
       side: 'buyer',
       action: decision.action,
       ...(decision.action === 'counter' ? { price: decision.price } : {}),
-      source: 'rule',
+      ...(decision.reason ? { reason: decision.reason } : {}),
+      source,
     })
   }
+  if (negotiation.status === 'expired') throw new Error(`No deal with ${seller.name}: the negotiation expired (a side stayed silent too long).`)
   if (negotiation.status !== 'accepted') throw new Error(`No deal with ${seller.name}: the prices never met.`)
   // Float noise from the policy's arithmetic (0.07000000000000001) never reaches the escrow amount.
   const price = String(Number(Number(negotiation.agreedPrice).toFixed(6)))

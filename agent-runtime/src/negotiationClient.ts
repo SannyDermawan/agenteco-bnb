@@ -3,12 +3,12 @@ import { buildAuthHeaders } from './authHeaders.ts'
 
 export type NegotiationSide = 'buyer' | 'seller'
 export type NegotiationAction = 'offer' | 'counter' | 'accept' | 'reject'
-export type NegotiationStatus = 'open' | 'accepted' | 'rejected'
+export type NegotiationStatus = 'open' | 'accepted' | 'rejected' | 'expired'
 
 /** Why a move was made (spec §9) — the model's reason, or rule-based. */
 export interface MoveMeta {
   reason?: string | null
-  source?: 'ai' | 'rule'
+  source?: 'ai' | 'rule' | 'agent'
   adjusted?: boolean
 }
 
@@ -19,7 +19,7 @@ export interface NegotiationMessage {
   price: string | null
   createdAt: string
   reason?: string | null
-  source?: 'ai' | 'rule'
+  source?: 'ai' | 'rule' | 'agent'
   adjusted?: boolean
 }
 

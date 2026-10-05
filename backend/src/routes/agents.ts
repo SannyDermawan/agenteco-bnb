@@ -4,11 +4,11 @@ import { CAPABILITIES, isCapabilityId } from '../../../agent-runtime/src/shared/
 import { canonicalize } from '../../../agent-runtime/src/shared/hashes.ts'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { prisma, prismaWithAgentKey } from '../db.ts'
-import { verifyOwnerAuth } from '../auth.ts'
+import { isAuthorizedForAgent, verifyOwnerAuth } from '../auth.ts'
 import { UUID_REGEX, agentView, isAgentOwner, optionalViewer, visibleAgentsFilter } from '../access.ts'
 import { encryptAgentKey } from '../agentKeyCrypto.ts'
 import { findBlockingWork, withdrawHostedWallet } from '../agentDeletion.ts'
-import { createAgentSchema, listAgentsQuerySchema, updateAgentSchema } from '../schemas/agent.ts'
+import { createAgentSchema, heartbeatSchema, listAgentsQuerySchema, updateAgentSchema } from '../schemas/agent.ts'
 import { unknownCapabilities } from '../capabilityRegistry.ts'
 
 export const agentsRouter = Router()
@@ -35,6 +35,8 @@ agentsRouter.get('/', async (req, res) => {
       AND: [
         { deletedAt: null },
         visibleAgentsFilter(viewer),
+        // A delisted agent is gone from the marketplace and from discovery; its owner still sees it.
+        viewer ? { OR: [{ delistedAt: null }, { ownerWallet: { equals: viewer, mode: 'insensitive' as const } }] } : { delistedAt: null },
         ...(q
           ? [
               {
@@ -120,6 +122,35 @@ agentsRouter.post('/', async (req, res) => {
   res.status(201).json(agent)
 })
 
+// A self-hosted agent's own process says it is running (online: true) or stopping
+// (online: false). Signed by the agent's wallet (the SDK) or its owner. Hosted
+// agents are run by AgentEco, so they never beat. See maintenance.ts.
+agentsRouter.post('/:id/heartbeat', async (req, res) => {
+  const auth = await verifyOwnerAuth(req)
+  if (!auth.ok) return res.status(401).json({ error: auth.error })
+  const parsed = heartbeatSchema.safeParse(req.body ?? {})
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+
+  const agent = await prisma.agent.findUnique({ where: { id: req.params.id } })
+  if (!agent || agent.deletedAt) return res.status(404).json({ error: 'Agent not found' })
+  if (agent.taskStatus !== null) return res.status(400).json({ error: 'This agent is hosted by AgentEco and needs no heartbeat' })
+  if (!isAuthorizedForAgent(auth.wallet, agent)) {
+    return res.status(403).json({ error: "Only the agent's own wallet or its owner can report it running" })
+  }
+  // Online means "the agent is running": only the process holding the agent's key can say so.
+  // The owner may still take it offline (e.g. after stopping it elsewhere).
+  const fromAgent = !!agent.walletAddress && auth.wallet.toLowerCase() === agent.walletAddress.toLowerCase()
+  if (parsed.data.online && !fromAgent) {
+    return res.status(403).json({ error: "Only the running agent, signing with its own wallet, can put it online" })
+  }
+  const updated = await prisma.agent.update({
+    where: { id: agent.id },
+    data: { isOnline: parsed.data.online, lastSeenAt: new Date() },
+    select: { id: true, isOnline: true, lastSeenAt: true, delistedAt: true },
+  })
+  res.json(updated)
+})
+
 // The human confirms they've sent the deposit to the agent's wallet — a
 // buyer needs the token (maxBudget) plus a little native gas for the host
 // runtime's own transactions; a seller only needs the gas. Verified on-chain here,
@@ -181,6 +212,11 @@ agentsRouter.patch('/:id', async (req, res) => {
   }
   if (parsed.data.isOnline && existing.role === 'seller' && existing.taskStatus === 'awaiting_deposit') {
     return res.status(400).json({ error: 'Deposit gas and activate this agent before putting it online' })
+  }
+  // A self-hosted seller is online while its own process (signing with the agent's wallet) runs, not by a switch.
+  const fromAgent = !!existing.walletAddress && auth.wallet.toLowerCase() === existing.walletAddress.toLowerCase()
+  if (parsed.data.isOnline && existing.role === 'seller' && existing.taskStatus === null && !existing.isOnline && !fromAgent) {
+    return res.status(400).json({ error: 'A self-hosted seller goes online by running it: its SDK reports it online with its heartbeat' })
   }
   // AgentEco generated a hosted agent's wallet and holds its key; pointing the
   // agent at another address would let its owner pass as that wallet.

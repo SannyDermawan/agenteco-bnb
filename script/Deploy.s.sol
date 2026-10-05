@@ -33,7 +33,7 @@ contract Deploy is Script {
 
         vm.startBroadcast(deployerKey);
         usdt = new MockUSDT();
-        eco = new AgentEco(address(usdt), arbiter, minWindow, acceptTimeout, disputeTimeout, firstEscrowId);
+        eco = new AgentEco(address(usdt), arbiter, minWindow, acceptTimeout, disputeTimeout, firstEscrowId, 0, deployer);
         vm.stopBroadcast();
 
         console.log("MockUSDT  ", address(usdt));

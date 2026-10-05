@@ -1,6 +1,6 @@
 import type { Address, PublicClient } from 'viem'
 import { AGENT_ECO_ABI } from '../shared/abi.generated.ts'
-import { AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, LEGACY_AGENT_ECO_ADDRESS, agentEcoFor, appChain } from '../network.ts'
+import { AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, LEGACY_DEPLOYMENTS, agentEcoFor, appChain } from '../network.ts'
 
 /**
  * Escrow discovery from contract state, not event logs. Public BSC Testnet
@@ -10,9 +10,9 @@ import { AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, LEGACY_AGENT_ECO_ADDRESS, agentEcoF
  * firstEscrowId..nextEscrowId-1 and exposes each one through getEscrowBasic,
  * which works against any RPC, forever.
  *
- * With a legacy deployment (AgentEco v1, see ../network.ts), its escrows
- * 1..nextEscrowId-1 come first; ids never overlap, so callers treat both
- * contracts as one list and agentEcoFor(id) finds the right contract.
+ * Legacy deployments (v1 and v2, see ../network.ts) come first, each within
+ * its own id range; ids never overlap, so callers treat every contract as one
+ * list and agentEcoFor(id) finds the right one.
  */
 
 export interface EscrowBasic {
@@ -31,13 +31,13 @@ async function idsOn(publicClient: PublicClient, address: Address, first: bigint
   return ids
 }
 
-/** Every escrow id that exists: the legacy deployment's, then the current one's. */
+/** Every escrow id that exists: each legacy deployment's, oldest first, then the current one's. */
 export async function allEscrowIds(publicClient: PublicClient): Promise<bigint[]> {
-  const [legacy, current] = await Promise.all([
-    LEGACY_AGENT_ECO_ADDRESS ? idsOn(publicClient, LEGACY_AGENT_ECO_ADDRESS, BigInt(1), FIRST_ESCROW_ID) : Promise.resolve([]),
+  const lists = await Promise.all([
+    ...LEGACY_DEPLOYMENTS.map((d) => idsOn(publicClient, d.address, d.firstEscrowId, d.endEscrowId)),
     idsOn(publicClient, AGENT_ECO_ADDRESS, FIRST_ESCROW_ID),
   ])
-  return [...legacy, ...current]
+  return lists.flat()
 }
 
 /** Escrow ids on the current deployment only — the ones that can still change. */

@@ -18,6 +18,7 @@ import { isCapabilityId } from '@shared/capabilities/definitions'
 import { exampleFromSchema } from '@shared/capabilities/custom'
 import { useCapabilities } from '@/lib/api/capabilities'
 import { CustomBriefForm, parseCustomBrief } from './CustomBriefForm'
+import { PlatformFeeRows } from './PlatformFee'
 
 type Step = 'idle' | 'checking-status' | HireStep | 'done'
 
@@ -136,6 +137,7 @@ export function RequestServiceCard({ agent }: { agent: AgentSummary }) {
               <span className="text-[#8B8D96]">Price</span>
               <span className="text-[#F5F5F7]">{agent.price.toFixed(2)} {TOKEN_SYMBOL}</span>
             </div>
+            <PlatformFeeRows price={agent.price} decimals={decimals} />
             <div className="flex items-center justify-between gap-3">
               <span className="shrink-0 text-[#8B8D96]">Seller wallet</span>
               <span className="truncate font-mono text-[11.5px] text-[#F5F5F7]" title={seller}>

@@ -12,6 +12,7 @@ import {
   CapabilityIcon,
   AgentsIcon,
   CreateAgentIcon,
+  PlugIcon,
   OrdersIcon,
   ActivityIcon,
   CloseIcon,
@@ -34,7 +35,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'MY AGENTS',
     items: [
       { label: 'My Agents', href: '/app/agents', icon: AgentsIcon },
-      { label: 'Create Agent', href: '/app/create-agent', icon: CreateAgentIcon },
+      // Hosted by AgentEco: try the whole flow (real escrow, AI and ratings) without building an agent.
+      { label: 'Create Agent - Demo', href: '/app/create-agent', icon: CreateAgentIcon },
+      // Bring an agent you built: it runs on your machine, with its own wallet and AI.
+      { label: 'Register Own Agent', href: '/app/register-agent', icon: PlugIcon },
     ],
   },
   {

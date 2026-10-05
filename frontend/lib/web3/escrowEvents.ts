@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { usePublicClient } from 'wagmi'
 import { decodeEventLog, toHex, type Address, type Hash, type Hex } from 'viem'
-import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, LEGACY_AGENT_ECO_ADDRESS, agentEcoFor } from './abi'
+import { AGENT_ECO_ABI, AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, LEGACY_DEPLOYMENTS, agentEcoFor } from './abi'
 import { appChain } from './chain'
 import { DEPLOY_BLOCK, LOG_HISTORY_BLOCKS, LOG_RANGE } from './network'
 
@@ -53,16 +53,17 @@ async function idsOn(client: PublicClient, address: Address, first: bigint, cap?
 }
 
 /**
- * Every escrow, from contract state: v1's ids 1..1000 (still read there), then
- * v2's from FIRST_ESCROW_ID; each is read through getEscrowBasic (batched with
+ * Every escrow, from contract state: each legacy deployment's id range (v1
+ * 1..1000, v2 1001..2000, still read there), then the current one's from
+ * FIRST_ESCROW_ID; each is read through getEscrowBasic (batched with
  * Multicall3). No event logs, so it keeps working after the RPC prunes history.
  */
 async function readAllEscrows(client: PublicClient): Promise<EscrowBasic[]> {
-  const [legacy, current] = await Promise.all([
-    LEGACY_AGENT_ECO_ADDRESS ? idsOn(client, LEGACY_AGENT_ECO_ADDRESS, BigInt(1), FIRST_ESCROW_ID) : Promise.resolve([]),
+  const lists = await Promise.all([
+    ...LEGACY_DEPLOYMENTS.map((d) => idsOn(client, d.address, d.firstEscrowId, d.endEscrowId)),
     idsOn(client, AGENT_ECO_ADDRESS, FIRST_ESCROW_ID),
   ])
-  const ids = [...legacy, ...current]
+  const ids = lists.flat()
 
   const out: EscrowBasic[] = []
   for (let i = 0; i < ids.length; i += MULTICALL_BATCH) {

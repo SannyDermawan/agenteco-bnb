@@ -44,8 +44,10 @@ interface NetworkPreset {
 interface Deployment {
   agentEcoAddress: Address
   deploymentBlock: bigint
-  /** The deployment this one replaced: escrows numbered below firstEscrowId still live there. */
-  legacy?: { agentEcoAddress: Address; firstEscrowId: bigint }
+  /** Where this deployment's escrow numbering starts. */
+  firstEscrowId: bigint
+  /** Earlier deployments, oldest first: escrows numbered below the next one's firstEscrowId still live there. */
+  legacy?: { agentEcoAddress: Address; firstEscrowId: bigint }[]
 }
 
 // Each preset verified against its RPC's eth_chainId.
@@ -71,12 +73,17 @@ const PRESETS: Record<NetworkName, NetworkPreset> = {
     lowGasWarn: '0.01',
     logRange: BigInt(45000),
     multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
-    // AgentEco v2 (reentrancy guard, two-step arbiter handover, ArbiterCouncil as arbiter),
-    // numbering escrows from 1001. Escrows #1–#23 stay on v1 and are still read there.
+    // AgentEco v3 (the 2.5% platform fee, with its own ArbiterCouncil), numbering escrows
+    // from 2001. v1 (#1–#1000) and v2 (#1001–#2000) are still read for their escrows.
     deployment: {
-      agentEcoAddress: '0xBbbD2902B736E7d7cbc031A597D51FFE5809c4F1',
-      deploymentBlock: BigInt(134276328),
-      legacy: { agentEcoAddress: '0x8bdff809013c28aA8a85038660D9d6E8d2c0294b', firstEscrowId: BigInt(1001) },
+      agentEcoAddress: '0xdC08Dd97e959Ab6ED2AB76702F25757Fe1fF46BE',
+      deploymentBlock: BigInt(135056464),
+      firstEscrowId: BigInt(2001),
+      // Earlier deployments, oldest first: an escrow id below the next one's firstEscrowId lives there.
+      legacy: [
+        { agentEcoAddress: '0x8bdff809013c28aA8a85038660D9d6E8d2c0294b', firstEscrowId: BigInt(1) },
+        { agentEcoAddress: '0xBbbD2902B736E7d7cbc031A597D51FFE5809c4F1', firstEscrowId: BigInt(1001) },
+      ],
     },
   },
   'bot-testnet': {
@@ -183,25 +190,39 @@ export const USDT_ADDRESS = readAddress('USDT_ADDRESS', preset.usdtAddress)
 /** Block AgentEco.sol was deployed at — log scans start here. Null = unknown (scan from "now"). */
 export const DEPLOYMENT_BLOCK = readBlock('DEPLOYMENT_BLOCK', preset.deployment?.deploymentBlock)
 
-/**
- * The previous AgentEco deployment, whose escrows (ids below FIRST_ESCROW_ID)
- * are still read there. Only used with the preset's own deployment: setting
- * AGENT_ECO_ADDRESS points everything at that one contract instead.
+/*
+ * Earlier AgentEco deployments, whose escrows are still read there. Only used with the
+ * preset's own deployment: setting AGENT_ECO_ADDRESS points everything at that one contract.
  */
-const legacy = env('AGENT_ECO_ADDRESS') ? undefined : preset.deployment?.legacy
-export const LEGACY_AGENT_ECO_ADDRESS: Address | null = legacy?.agentEcoAddress ?? null
-/** First escrow id of AGENT_ECO_ADDRESS; lower ids belong to LEGACY_AGENT_ECO_ADDRESS. */
-export const FIRST_ESCROW_ID: bigint = legacy?.firstEscrowId ?? BigInt(1)
+const legacyList: { agentEcoAddress: Address; firstEscrowId: bigint }[] = env('AGENT_ECO_ADDRESS') ? [] : (preset.deployment?.legacy ?? [])
+/** First escrow id of AGENT_ECO_ADDRESS (the current deployment); lower ids belong to a legacy one. */
+export const FIRST_ESCROW_ID: bigint = env('AGENT_ECO_ADDRESS') ? BigInt(1) : (preset.deployment?.firstEscrowId ?? BigInt(1))
+/** Earlier AgentEco deployments, oldest first, each with its escrow ids [firstEscrowId, endEscrowId). */
+export const LEGACY_DEPLOYMENTS: { address: Address; firstEscrowId: bigint; endEscrowId: bigint }[] = legacyList.map((d, i) => ({
+  address: d.agentEcoAddress,
+  firstEscrowId: d.firstEscrowId,
+  endEscrowId: legacyList[i + 1]?.firstEscrowId ?? FIRST_ESCROW_ID,
+}))
+/** The most recent earlier deployment (older code paths read one legacy contract). */
+export const LEGACY_AGENT_ECO_ADDRESS: Address | null = LEGACY_DEPLOYMENTS[LEGACY_DEPLOYMENTS.length - 1]?.address ?? null
+/** Every AgentEco deployment this app reads, the current one first. A seller's reputation is summed over all of them. */
+export const ALL_AGENT_ECO_ADDRESSES: Address[] = [AGENT_ECO_ADDRESS, ...LEGACY_DEPLOYMENTS.map((d) => d.address).reverse()]
 
-/** The AgentEco contract that holds this escrow: the current one, or the legacy one for older ids. */
+/** The AgentEco contract that holds this escrow: the current one, or the legacy one its id falls in. */
 export function agentEcoFor(escrowId: bigint): Address {
-  return LEGACY_AGENT_ECO_ADDRESS && escrowId < FIRST_ESCROW_ID ? LEGACY_AGENT_ECO_ADDRESS : AGENT_ECO_ADDRESS
+  if (escrowId >= FIRST_ESCROW_ID) return AGENT_ECO_ADDRESS
+  return LEGACY_DEPLOYMENTS.find((d) => escrowId >= d.firstEscrowId && escrowId < d.endEscrowId)?.address ?? AGENT_ECO_ADDRESS
+}
+
+/** Whether this escrow pays the platform fee: only the current deployment (v3) has one. */
+export function hasPlatformFee(escrowId: bigint): boolean {
+  return agentEcoFor(escrowId) === AGENT_ECO_ADDRESS
 }
 
 /** Whether a log or receipt came from one of this app's AgentEco contracts. */
 export function isAgentEcoAddress(address: string): boolean {
   const a = address.toLowerCase()
-  return a === AGENT_ECO_ADDRESS.toLowerCase() || (!!LEGACY_AGENT_ECO_ADDRESS && a === LEGACY_AGENT_ECO_ADDRESS.toLowerCase())
+  return ALL_AGENT_ECO_ADDRESSES.some((x) => x.toLowerCase() === a)
 }
 
 export const appChain = defineChain({

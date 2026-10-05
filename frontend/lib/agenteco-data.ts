@@ -23,6 +23,11 @@ export interface AgentSummary {
   walletAddress?: `0x${string}`
   /** Run by AgentEco with its own wallet (spec §8.4), vs. a self-hosted agent process. */
   hosted?: boolean
+  /** When it was listed: new sellers wear a "New" badge for three days. */
+  createdAt?: string
+  /** Self-hosted: the last heartbeat from its own process. */
+  lastSeenAt?: string | null
+  delisted?: boolean
 }
 
 export type OrderStatus =

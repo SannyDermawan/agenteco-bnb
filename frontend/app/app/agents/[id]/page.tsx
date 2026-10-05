@@ -6,6 +6,9 @@ import { AgentReputationStats } from '@/components/app/AgentReputationStats'
 import { BrandMarkIcon } from '@/components/app/icons'
 import { PageFade } from '@/components/app/PageFade'
 import { getAgent, toAgentSummary } from '@/lib/api/agents'
+import { DelistedBadge, NewBadge } from '@/components/app/moderation/ListingBadges'
+import { ReportAgent } from '@/components/app/moderation/ReportAgent'
+import { DelistedPanel } from '@/components/app/moderation/DelistedPanel'
 
 export default async function AgentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,6 +27,12 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
             <div className="flex flex-wrap items-center gap-2.5">
               <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[#F5F5F7]">{agent.name}</h2>
               <AgentStatus status={agent.status} />
+              {apiAgent.delistedAt ? <DelistedBadge /> : <NewBadge createdAt={apiAgent.createdAt} />}
+              {apiAgent.role === 'seller' && (
+                <span className="rounded-full border border-white/[0.08] bg-[#0B0C11] px-2 py-0.5 text-[10.5px] text-[#8B8D96]">
+                  {agent.hosted ? 'Hosted by AgentEco' : 'Self-hosted by its owner'}
+                </span>
+              )}
             </div>
             <div className="mt-1 text-[13.5px] text-[#8B8D96]">{agent.service}</div>
           </div>
@@ -61,8 +70,17 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
             />
           </div>
 
-          <div>
-            <RequestServiceCard agent={agent} />
+          <div className="space-y-4">
+            {apiAgent.delistedAt ? (
+              <DelistedPanel agentId={apiAgent.id} ownerWallet={apiAgent.ownerWallet} reason={apiAgent.delistReason} />
+            ) : (
+              <RequestServiceCard agent={agent} />
+            )}
+            {apiAgent.role === 'seller' && !apiAgent.delistedAt && (
+              <div className="px-1">
+                <ReportAgent agentId={apiAgent.id} ownerWallet={apiAgent.ownerWallet} walletAddress={apiAgent.walletAddress} />
+              </div>
+            )}
           </div>
         </div>
       </div>

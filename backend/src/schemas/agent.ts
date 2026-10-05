@@ -116,3 +116,5 @@ export const listAgentsQuerySchema = z.object({
   // dengan keyword matching, capability matching, dan filtering."
   q: z.string().min(1).optional(),
 })
+
+export const heartbeatSchema = z.object({ online: z.boolean().default(true) })

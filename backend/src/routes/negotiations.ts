@@ -3,6 +3,8 @@ import { prisma } from '../db.ts'
 import { isAuthorizedForAgent, verifyOwnerAuth } from '../auth.ts'
 import { UUID_REGEX, isArbiter, isPartyOf, partyFilter, requireViewer } from '../access.ts'
 import { createNegotiationSchema, listNegotiationsQuerySchema, negotiationMessageSchema } from '../schemas/negotiation.ts'
+import { turnExpired } from '../maintenance.ts'
+import { NEGOTIATION_TURN_SECONDS } from '../../../agent-runtime/src/durations.ts'
 
 export const negotiationsRouter = Router()
 
@@ -71,6 +73,9 @@ negotiationsRouter.post('/', async (req, res) => {
   if (!seller.capabilities.includes(capability)) {
     return res.status(400).json({ error: `Seller agent does not offer capability "${capability}"` })
   }
+  if (seller.deletedAt || seller.delistedAt) {
+    return res.status(400).json({ error: 'This seller is no longer listed in the marketplace' })
+  }
   if (!seller.isOnline) {
     return res.status(400).json({ error: 'Seller agent is offline and not accepting new work' })
   }
@@ -114,6 +119,11 @@ negotiationsRouter.post('/:id/messages', async (req, res) => {
   }
 
   const lastMessage = negotiation.messages[negotiation.messages.length - 1]
+  // The turn-holder went silent too long: the negotiation is over (the sweep in maintenance.ts may not have run yet).
+  if (turnExpired(lastMessage.createdAt)) {
+    await prisma.negotiation.updateMany({ where: { id: negotiation.id, status: 'open' }, data: { status: 'expired' } })
+    return res.status(400).json({ error: `Negotiation expired: no answer within ${NEGOTIATION_TURN_SECONDS}s of the last offer` })
+  }
   if (lastMessage.side === side) {
     return res.status(400).json({ error: `It is not ${side}'s turn to respond` })
   }

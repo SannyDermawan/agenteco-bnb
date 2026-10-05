@@ -15,6 +15,7 @@ import { NegotiationDealCard, NegotiationTimeline } from '@/components/app/Negot
 import { FundOrderCard } from '@/components/app/FundOrderCard'
 import { PageFade } from '@/components/app/PageFade'
 import { agentEcoFor } from '@/lib/web3/abi'
+import { EscrowFeeBreakdown } from '@/components/app/PlatformFee'
 import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { getOrder, toNegotiationEntries, toOrderRow } from '@/lib/api/orders'
 import { PrivateOrderError } from '@/lib/api/session'
@@ -119,6 +120,7 @@ function LiveEscrowSidebar({ escrowId }: { escrowId: bigint }) {
         <div className="mt-2 text-[24px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">
           {amountFormatted} <span className="text-[13px] font-medium text-[#8B8D96]">{TOKEN_SYMBOL}</span>
         </div>
+        {basic.data && <EscrowFeeBreakdown escrowId={escrowId} amount={basic.data[2]} decimals={decimals} />}
         <a
           href={explorerAddressUrl(agentEcoFor(escrowId))}
           target="_blank"

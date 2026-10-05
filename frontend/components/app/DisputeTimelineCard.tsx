@@ -65,7 +65,7 @@ export function DisputeTimelineCard({ escrowId, status, buyer }: { escrowId: big
   const { address } = useAccount()
   const { signMessageAsync } = useSignMessage()
   const queryClient = useQueryClient()
-  const isArbiter = useIsArbiter(address)
+  const isArbiter = useIsArbiter(address, escrowId)
   const isBuyer = !!address && address.toLowerCase() === buyer.toLowerCase()
   const now = useNow()
   const open = status === DISPUTED

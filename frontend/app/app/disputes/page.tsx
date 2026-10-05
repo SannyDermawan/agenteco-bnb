@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { formatUnits } from 'viem'
@@ -13,6 +14,8 @@ import { Remaining, useNow } from '@/components/app/DeadlineCountdown'
 import { explorerTxUrl, useDisputes, type DisputeSummary } from '@/lib/web3/escrowEvents'
 import { useArbiter, useArbiterCouncil, useIsArbiter, useUsdtDecimals } from '@/lib/web3/hooks'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
+import { getModerationQueue } from '@/lib/api/moderation'
+import { ModerationQueue } from '@/components/app/moderation/ModerationQueue'
 
 const DISPUTED = 4 // AgentEco.sol OrderStatus
 
@@ -171,6 +174,15 @@ export default function DisputesPage() {
     refetchInterval: 5_000,
   })
   const recordByEscrow = new Map((reasons ?? []).map((r) => [r.escrowId, r]))
+  // Listing reports and appeals, decided by the same council.
+  const [tab, setTab] = useState<'disputes' | 'moderation'>('disputes')
+  const { data: queue, error: queueError } = useQuery({
+    queryKey: ['moderation', address],
+    queryFn: getModerationQueue,
+    enabled: isArbiter && signedIn,
+    refetchInterval: 10_000,
+  })
+  const openCases = (queue?.reports.filter((r) => r.status === 'open').length ?? 0) + (queue?.appeals.filter((a) => a.status === 'open').length ?? 0)
 
   const open = disputes?.filter((d) => d.status === DISPUTED) ?? []
   const closed = disputes?.filter((d) => d.status !== DISPUTED) ?? []
@@ -181,8 +193,9 @@ export default function DisputesPage() {
         <div>
           <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">Disputes</h2>
           <p className="mt-1 text-[13.5px] text-[#8B8D96]">
-            Escrows a buyer has disputed. The AI arbiter recommends a ruling once the seller has answered; approve it,
-            reverse it with your own reasons, or let a confident recommendation execute when your override window ends.
+            {tab === 'disputes'
+              ? 'Escrows a buyer has disputed. The AI arbiter recommends a ruling once the seller has answered; approve it, reverse it with your own reasons, or let a confident recommendation execute when your override window ends.'
+              : 'Listings reported by users, and appeals from owners of delisted agents. The council decides both.'}
           </p>
         </div>
 
@@ -204,30 +217,63 @@ export default function DisputesPage() {
           </NeumorphicCard>
         ) : !signedIn ? (
           <SessionGate what="the disputes">{null}</SessionGate>
-        ) : isPending ? (
-          <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">Reading disputes from the chain…</NeumorphicCard>
         ) : (
           <>
-            <section className="space-y-3">
-              <h3 className="text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">OPEN · {open.length}</h3>
-              {open.length === 0 ? (
-                <NeumorphicCard className="p-6 text-center text-[13.5px] text-[#8B8D96]">
-                  No open disputes — nothing is waiting on you.
-                </NeumorphicCard>
+            <div className="flex gap-2" role="tablist">
+              {(
+                [
+                  ['disputes', `Escrow disputes · ${open.length}`],
+                  ['moderation', `Reports & appeals · ${openCases}`],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === key}
+                  onClick={() => setTab(key)}
+                  className={`rounded-full border px-3.5 py-1.5 text-[12.5px] transition ${
+                    tab === key ? 'border-[#5B5FEF]/50 bg-[#5B5FEF]/10 text-[#F5F5F7]' : 'border-white/[0.08] text-[#8B8D96] hover:text-[#F5F5F7]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tab === 'moderation' ? (
+              queueError ? (
+                <NeumorphicCard className="p-6 text-[13.5px] text-[#EF4444]">{(queueError as Error).message}</NeumorphicCard>
+              ) : !queue ? (
+                <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">Loading the moderation queue…</NeumorphicCard>
               ) : (
-                open.map((d) => (
-                  <DisputeRow key={d.escrowId.toString()} d={d} record={recordByEscrow.get(d.escrowId.toString())} decimals={decimals} />
-                ))
-              )}
-            </section>
+                <ModerationQueue queue={queue} me={address!.toLowerCase()} />
+              )
+            ) : isPending ? (
+              <NeumorphicCard className="p-6 text-[13.5px] text-[#8B8D96]">Reading disputes from the chain…</NeumorphicCard>
+            ) : (
+              <>
+                <section className="space-y-3">
+                  <h3 className="text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">OPEN · {open.length}</h3>
+                  {open.length === 0 ? (
+                    <NeumorphicCard className="p-6 text-center text-[13.5px] text-[#8B8D96]">
+                      No open disputes — nothing is waiting on you.
+                    </NeumorphicCard>
+                  ) : (
+                    open.map((d) => (
+                      <DisputeRow key={d.escrowId.toString()} d={d} record={recordByEscrow.get(d.escrowId.toString())} decimals={decimals} />
+                    ))
+                  )}
+                </section>
 
-            {closed.length > 0 && (
-              <section className="space-y-3">
-                <h3 className="text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">RESOLVED · {closed.length}</h3>
-                {closed.map((d) => (
-                  <DisputeRow key={d.escrowId.toString()} d={d} record={recordByEscrow.get(d.escrowId.toString())} decimals={decimals} />
-                ))}
-              </section>
+                {closed.length > 0 && (
+                  <section className="space-y-3">
+                    <h3 className="text-[12px] font-medium tracking-[0.1em] text-[#8B8D96]">RESOLVED · {closed.length}</h3>
+                    {closed.map((d) => (
+                      <DisputeRow key={d.escrowId.toString()} d={d} record={recordByEscrow.get(d.escrowId.toString())} decimals={decimals} />
+                    ))}
+                  </section>
+                )}
+              </>
             )}
           </>
         )}

@@ -1,39 +1,15 @@
 'use client'
-import { useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useAccount, useSignMessage } from 'wagmi'
-import { CUSTOM_CATEGORIES, registerCapabilitySchema } from '@shared/capabilities/custom'
+import { useState } from 'react'
 import { NeumorphicCard } from '@/components/app/NeumorphicCard'
 import { PageFade } from '@/components/app/PageFade'
-import { FIELD_CLASS, Field } from '@/components/app/FormField'
-import { registerCapability, useCapabilities, type CapabilityInfo, type CapabilitySort } from '@/lib/api/capabilities'
+import { CapabilityPublisher } from '@/components/app/CapabilityPublisher'
+import { useCapabilities, type CapabilityInfo, type CapabilitySort } from '@/lib/api/capabilities'
 
 type Filter = 'all' | 'platform' | 'community'
 
 function truncateAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
-
-// What the form starts with: a small, complete capability to edit from.
-const EXAMPLE_INPUT = {
-  type: 'object',
-  properties: { text: { type: 'string', minLength: 1, maxLength: 2000, description: 'The text to score' } },
-  required: ['text'],
-  additionalProperties: false,
-}
-const EXAMPLE_OUTPUT = {
-  type: 'object',
-  properties: {
-    score: { type: 'number', minimum: -1, maximum: 1 },
-    label: { enum: ['negative', 'neutral', 'positive'] },
-    reason: { type: 'string' },
-  },
-  required: ['score', 'label', 'reason'],
-}
-const EXAMPLE_EXAMPLES = [
-  { title: 'A happy review', input: { text: 'Great product, fast delivery.' }, output: { score: 0.9, label: 'positive', reason: 'Mentions "great" and "fast".' } },
-  { title: 'A complaint', input: { text: 'Slow and expensive.' }, output: { score: -0.8, label: 'negative', reason: 'Mentions "slow" and "expensive".' } },
-]
 
 function SchemaBlock({ title, schema }: { title: string; schema: unknown }) {
   return (
@@ -104,7 +80,7 @@ function CapabilityCard({ c, rank }: { c: CapabilityInfo; rank?: number }) {
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-[#54565F]">
         <span>{c.category}</span>
         <span>·</span>
-        <span>{platform ? 'Hosted and self-hosted agents' : 'Self-hosted agents (SDK)'}</span>
+        <span>{platform ? 'Hosted and self-hosted agents' : 'Self-hosted agents'}</span>
         {c.ownerWallet && (
           <>
             <span>·</span>
@@ -140,130 +116,6 @@ function CapabilityCard({ c, rank }: { c: CapabilityInfo; rank?: number }) {
   )
 }
 
-function PublishForm({ taken, onDone }: { taken: string[]; onDone: () => void }) {
-  const { address, isConnected } = useAccount()
-  const { signMessageAsync } = useSignMessage()
-  const queryClient = useQueryClient()
-  const [form, setForm] = useState({
-    id: '',
-    name: '',
-    category: 'Automation' as (typeof CUSTOM_CATEGORIES)[number],
-    description: 'Scores how positive or negative a text is, from -1 to 1, with a one-line reason.',
-    inputSchema: JSON.stringify(EXAMPLE_INPUT, null, 2),
-    outputSchema: JSON.stringify(EXAMPLE_OUTPUT, null, 2),
-    rubric: 'The label agrees with the score, the score fits the tone of the text, and the reason quotes the text.',
-    examples: JSON.stringify(EXAMPLE_EXAMPLES, null, 2),
-  })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value })
-
-  // Same rules as the API (shared schema): field-level errors as you type.
-  const check = useMemo(() => {
-    const json = (text: string) => {
-      try {
-        return JSON.parse(text)
-      } catch {
-        return '__invalid__'
-      }
-    }
-    const input = { ...form, inputSchema: json(form.inputSchema), outputSchema: json(form.outputSchema), examples: json(form.examples) }
-    const parsed = registerCapabilitySchema.safeParse(input)
-    const errors: Partial<Record<keyof typeof form, string>> = {}
-    if (input.inputSchema === '__invalid__') errors.inputSchema = 'Not valid JSON.'
-    if (input.outputSchema === '__invalid__') errors.outputSchema = 'Not valid JSON.'
-    if (input.examples === '__invalid__') errors.examples = 'Not valid JSON.'
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        const key = issue.path[0] as keyof typeof form
-        const where = key === 'examples' && issue.path.length > 1 ? `Example ${Number(issue.path[1]) + 1} ${String(issue.path[2] ?? '')}: ` : ''
-        errors[key] ??= `${where}${issue.message}`
-      }
-    }
-    if (form.id && taken.includes(form.id)) errors.id = 'Already published — capabilities are permanent, so pick a new id.'
-    const ok = parsed.success && !errors.id
-    return { ok, data: ok && parsed.success ? parsed.data : null, errors }
-  }, [form, taken])
-
-  async function publish() {
-    if (!address || !check.data) return
-    setBusy(true)
-    setError(null)
-    try {
-      await registerCapability({ address, signMessageAsync }, check.data)
-      await queryClient.invalidateQueries({ queryKey: ['capabilities'] })
-      onDone()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Publishing failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <NeumorphicCard className="space-y-4 p-6">
-      <div>
-        <h3 className="text-[15px] font-semibold text-[#F5F5F7]">Publish a capability</h3>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-[#8B8D96]">
-          Describe a job any agent can be hired for. Buyers&apos; briefs are checked against your input schema before an escrow
-          is created; results against your output schema. Published capabilities are permanent — a new version is a new id.
-        </p>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Id" error={check.errors.id} hint="lowercase, digits and _">
-          <input value={form.id} onChange={set('id')} placeholder="sentiment_score" className={`${FIELD_CLASS} font-mono`} />
-        </Field>
-        <Field label="Name" error={check.errors.name}>
-          <input value={form.name} onChange={set('name')} placeholder="Sentiment score" className={FIELD_CLASS} />
-        </Field>
-      </div>
-      <Field label="Category">
-        <select value={form.category} onChange={set('category')} className={FIELD_CLASS}>
-          {CUSTOM_CATEGORIES.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Description" error={check.errors.description}>
-        <textarea value={form.description} onChange={set('description')} rows={2} className={`${FIELD_CLASS} resize-none`} />
-      </Field>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Field label="Input schema (JSON Schema)" error={check.errors.inputSchema} hint="Flat schemas (strings, numbers, booleans, enums, lists) become a real form for buyers.">
-          <textarea value={form.inputSchema} onChange={set('inputSchema')} rows={10} spellCheck={false} className={`${FIELD_CLASS} resize-y font-mono text-[12px]`} />
-        </Field>
-        <Field label="Output schema (JSON Schema)" error={check.errors.outputSchema}>
-          <textarea value={form.outputSchema} onChange={set('outputSchema')} rows={10} spellCheck={false} className={`${FIELD_CLASS} resize-y font-mono text-[12px]`} />
-        </Field>
-      </div>
-      <Field label="Rubric — how a verifier judges a delivery" error={check.errors.rubric}>
-        <textarea value={form.rubric} onChange={set('rubric')} rows={2} className={`${FIELD_CLASS} resize-none`} />
-      </Field>
-      <Field
-        label="Examples (optional, up to 5)"
-        error={check.errors.examples}
-        hint="A brief and the result a good seller delivers. Each must fit your schemas. Buyers start from them; the AI arbiter compares disputed deliveries against them."
-      >
-        <textarea value={form.examples} onChange={set('examples')} rows={8} spellCheck={false} className={`${FIELD_CLASS} resize-y font-mono text-[12px]`} />
-      </Field>
-      {!isConnected ? (
-        <p className="rounded-xl border border-white/[0.06] bg-[#0B0C11] px-3 py-2.5 text-[12.5px] text-[#8B8D96]">
-          Connect your wallet from the top bar — the capability is published under your address.
-        </p>
-      ) : (
-        <button
-          type="button"
-          disabled={!check.ok || busy}
-          onClick={publish}
-          className="w-full rounded-xl bg-[#5B5FEF] py-2.5 text-[13.5px] font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {busy ? 'Sign in your wallet…' : 'Publish capability'}
-        </button>
-      )}
-      {error && <p className="text-[12px] text-[#EF4444]">{error}</p>}
-    </NeumorphicCard>
-  )
-}
-
 /** The open capability registry, best-ranked first, and a form to publish a new one. */
 export default function CapabilitiesPage() {
   const [sort, setSort] = useState<CapabilitySort>('top')
@@ -284,7 +136,7 @@ export default function CapabilitiesPage() {
             <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">Capabilities</h2>
             <p className="mt-1 max-w-[62ch] text-[13.5px] leading-relaxed text-[#8B8D96]">
               The open registry of jobs agents can be hired for. Platform capabilities run on hosted agents; community
-              capabilities are published by developers and served by self-hosted agents built with the SDK.
+              capabilities are published by developers and served by their own agents (see Register Own Agent).
             </p>
           </div>
           <button
@@ -296,7 +148,7 @@ export default function CapabilitiesPage() {
           </button>
         </div>
 
-        {publishing && <PublishForm taken={all.map((c) => c.id)} onDone={() => (setPublishing(false), setFilter('community'))} />}
+        {publishing && <CapabilityPublisher taken={all.map((c) => c.id)} onPublished={() => (setPublishing(false), setFilter('community'))} />}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-2">

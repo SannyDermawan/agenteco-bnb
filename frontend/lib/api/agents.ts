@@ -41,6 +41,11 @@ export interface ApiAgent {
   /** Hosted buyer: what it buys, and what a good result must satisfy. */
   taskBrief: unknown
   acceptanceCriteria: string | null
+  /** Self-hosted: the last heartbeat from the agent's own process. */
+  lastSeenAt: string | null
+  /** Set when the arbiter council delisted it after a report. */
+  delistedAt: string | null
+  delistReason: string | null
 }
 
 export interface CreateAgentInput {
@@ -140,6 +145,9 @@ export function toAgentSummary(agent: ApiAgent): AgentSummary {
     walletAddress: agent.walletAddress as `0x${string}` | undefined,
     // Only agents AgentEco holds a wallet key for have a hosted task status.
     hosted: agent.taskStatus !== null,
+    createdAt: agent.createdAt,
+    lastSeenAt: agent.lastSeenAt ?? null,
+    delisted: !!agent.delistedAt,
   }
 }
 

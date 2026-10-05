@@ -1,5 +1,14 @@
 // AgentEco.sol and USDT for the network this build targets — see ./network.ts.
-export { AGENT_ECO_ADDRESS, USDT_ADDRESS, LEGACY_AGENT_ECO_ADDRESS, FIRST_ESCROW_ID, agentEcoFor } from './network'
+export {
+  AGENT_ECO_ADDRESS,
+  USDT_ADDRESS,
+  LEGACY_AGENT_ECO_ADDRESS,
+  LEGACY_DEPLOYMENTS,
+  ALL_AGENT_ECO_ADDRESSES,
+  FIRST_ESCROW_ID,
+  agentEcoFor,
+  hasPlatformFee,
+} from './network'
 
 // The full AgentEco.sol and MockUSDT ABIs, generated from the Foundry build (scripts/gen-abi.mjs).
 export { AGENT_ECO_ABI, MOCK_USDT_ABI, ARBITER_COUNCIL_ABI } from '@shared/abi.generated'

@@ -66,10 +66,24 @@ model Agent {
   taskBrief          Json?   @map("task_brief")
   acceptanceCriteria String? @map("acceptance_criteria")
 
+  // --- Self-hosted agents (Register Own Agent) ---
+  // The last heartbeat from a self-hosted agent's own process (the SDK sends one
+  // every poll). A self-hosted seller counts as online only while it keeps beating:
+  // maintenance.ts takes it offline when the heartbeats stop.
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+
+  // --- Moderation (reports, decided by the arbiter council) ---
+  // Set = delisted: hidden from the marketplace and from discovery, and no new
+  // negotiations. Deals already in escrow still finish. The owner can appeal.
+  delistedAt   DateTime? @map("delisted_at") @db.Timestamptz(6)
+  delistReason String?   @map("delist_reason")
+
   negotiationsAsBuyer  Negotiation[] @relation("BuyerAgent")
   negotiationsAsSeller Negotiation[] @relation("SellerAgent")
   ordersAsBuyer        Order[]       @relation("OrderBuyerAgent")
   ordersAsSeller       Order[]       @relation("OrderSellerAgent")
+  reports              Report[]
+  appeals              Appeal[]
 
   @@map("agents")
 }
@@ -83,7 +97,8 @@ model Negotiation {
   buyerAgentId  String   @map("buyer_agent_id") @db.Uuid
   sellerAgentId String   @map("seller_agent_id") @db.Uuid
   capability    String
-  status        String   @default("open") // open | accepted | rejected
+  // open | accepted | rejected | expired (the side whose turn it was went silent; see maintenance.ts)
+  status        String   @default("open")
   agreedPrice   Decimal? @map("agreed_price") @db.Decimal
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -104,7 +119,8 @@ model NegotiationMessage {
   price         Decimal? @db.Decimal
   // Why this offer (≤280 chars, English) — from the model, or null for rule-based moves.
   reason        String?
-  source        String   @default("rule") // ai | rule
+  // ai | rule (AgentEco's hosted agents) | agent (a self-hosted agent's own logic)
+  source        String   @default("rule")
   // True when a guardrail clamped the model's price to a limit.
   adjusted      Boolean  @default(false)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -302,4 +318,56 @@ model Capability {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("capabilities")
+}
+
+// A wallet reports a seller listing (scam, fake results, spam, harmful). The
+// arbiter council votes on it (ModerationVote): enough "delist" votes delist the
+// agent, enough "dismiss" votes close the report.
+model Report {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId        String    @map("agent_id") @db.Uuid
+  reporterWallet String    @map("reporter_wallet")
+  category       String // fake_results | scam | spam | harmful | other
+  reason         String
+  /// The reporter once hired this seller (stronger evidence).
+  hadOrder       Boolean   @default(false) @map("had_order")
+  status         String    @default("open") // open | delisted | dismissed
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, status])
+  @@index([reporterWallet, createdAt])
+  @@map("reports")
+}
+
+// A delisted agent's owner asks the council to reinstate it.
+model Appeal {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentId     String    @map("agent_id") @db.Uuid
+  ownerWallet String    @map("owner_wallet")
+  reason      String
+  status      String    @default("open") // open | reinstated | upheld
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, status])
+  @@map("appeals")
+}
+
+// One council member's vote on a report (delist | dismiss) or an appeal
+// (reinstate | uphold). The council's admin threshold decides.
+model ModerationVote {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseType    String   @map("case_type") // report | appeal
+  caseId      String   @map("case_id") @db.Uuid
+  voterWallet String   @map("voter_wallet")
+  vote        String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([caseType, caseId, voterWallet])
+  @@map("moderation_votes")
 }

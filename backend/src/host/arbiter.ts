@@ -16,7 +16,7 @@ import { ARBITER_AUTO_MIN_CONFIDENCE } from '../ai/config.ts'
 import { prisma } from '../db.ts'
 import { log, logError } from '../log.ts'
 import { warnIfLowGas } from '../gasWatch.ts'
-import { AGENT_ECO_ADDRESS, RPC_URL, agentEcoFor, appChain, appTransport } from '../network.ts'
+import { AGENT_ECO_ADDRESS, ALL_AGENT_ECO_ADDRESSES, RPC_URL, agentEcoFor, appChain, appTransport } from '../network.ts'
 
 /**
  * The AI arbiter (spec §11 steps 3–5), run by the host process: it already has
@@ -30,9 +30,11 @@ import { AGENT_ECO_ADDRESS, RPC_URL, agentEcoFor, appChain, appTransport } from 
  * with ≥ 60 s left before the on-chain deadline is executed here with
  * ARBITER_PRIVATE_KEY. Anything else waits for the human or the timeout refund.
  *
- * On AgentEco v2 the arbiter is an ArbiterCouncil and ARBITER_PRIVATE_KEY is
+ * From AgentEco v2 the arbiter is an ArbiterCouncil and ARBITER_PRIVATE_KEY is
  * one of its members: the AI's ruling is its vote, which executes at once
  * when the council's ruling threshold is 1, or waits for a human's matching vote.
+ * Each deployment has its own council (v2's, v3's); disputes on an older one
+ * are still recommended and ruled there, through that deployment's council.
  */
 
 // AgentEco.sol OrderStatus
@@ -46,6 +48,8 @@ const publicClient = createPublicClient({ chain: appChain, transport: appTranspo
 const chain = { publicClient } as unknown as Pick<OnchainClients, 'publicClient'>
 
 let arbiter: OnchainClients | null | undefined
+/** AgentEco deployments (lowercase) whose disputes ARBITER_PRIVATE_KEY can rule. */
+let rulable = new Set<string>()
 
 /**
  * The arbiter wallet, if ARBITER_PRIVATE_KEY is set and is the contract's
@@ -68,6 +72,14 @@ export async function initArbiter(): Promise<void> {
     return
   }
   arbiter = createOnchainClients(key, RPC_URL)
+  rulable = new Set([AGENT_ECO_ADDRESS.toLowerCase()])
+  for (const eco of ALL_AGENT_ECO_ADDRESSES.slice(1)) {
+    try {
+      if (canRule(await readArbiterSetup(publicClient, eco), account.address)) rulable.add(eco.toLowerCase())
+    } catch (error) {
+      logError(`Arbiter: could not read the arbiter of ${eco}`, error, 'HOST')
+    }
+  }
   const via = setup.council
     ? `, voting in ArbiterCouncil ${setup.council.address} (${setup.council.rulingThreshold} of ${setup.council.members.length} votes rule)`
     : ''
@@ -155,6 +167,10 @@ async function autoResolve(escrow: EscrowBasic, disputeDeadline: number): Promis
   const row = await prisma.dispute.findUnique({ where: { escrowId: id } })
   if (!row?.recommendedAt || row.recUnavailable || !row.recVerdict || row.recConfidence === null || !row.recRationale || !row.overrideDeadline) return
   if (!arbiter) return
+  if (!rulable.has(agentEcoFor(escrow.id).toLowerCase())) {
+    logOnce(id, 'not-rulable', `[arbiter] escrow #${id}: this key is not the arbiter of ${agentEcoFor(escrow.id)} — left to its arbiter or the timeout.`)
+    return
+  }
 
   const decision = shouldAutoResolve({
     confidence: row.recConfidence,
@@ -227,8 +243,8 @@ export async function runArbiterCycleOnce(): Promise<void> {
   const escrows = await readAllEscrows(chain.publicClient)
   const statusById = new Map(escrows.map((e) => [e.id.toString(), e.status]))
 
-  // Only the current deployment's disputes can still be ruled (its arbiter is the one checked above).
-  const disputed = escrows.filter((e) => e.status === DISPUTED && agentEcoFor(e.id) === AGENT_ECO_ADDRESS)
+  // Disputes on every deployment get a recommendation; autoResolve rules only where this key can.
+  const disputed = escrows.filter((e) => e.status === DISPUTED)
   if (disputed.length && arbiter) await warnIfLowGas(arbiter.publicClient, arbiter.account.address, 'arbiter')
   for (const escrow of disputed) {
     try {

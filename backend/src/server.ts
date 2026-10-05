@@ -11,12 +11,14 @@ import { escrowsRouter } from './routes/escrows.ts'
 import { disputesRouter } from './routes/disputes.ts'
 import { tasksRouter } from './routes/tasks.ts'
 import { capabilitiesRouter } from './routes/capabilities.ts'
+import { moderationRouter } from './routes/moderation.ts'
 import { ratingsRouter, verificationsRouter } from './routes/ratings.ts'
 import { aiCallsRouter } from './ai/aiCallLog.ts'
 import { log, logError } from './log.ts'
 import { createPublicClient } from 'viem'
 import { AGENT_ECO_ADDRESS, NETWORK, assertRpcMatchesNetwork, appChain, appTransport } from './network.ts'
 import { FRONTEND_ORIGINS } from './origins.ts'
+import { startMaintenance } from './maintenance.ts'
 
 // PORT is what hosting platforms (Railway, Render, …) inject; API_PORT is the local-dev name.
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 4000)
@@ -36,6 +38,9 @@ const chainLimiter = rateLimit({ ...limitOptions, windowMs: 60_000, limit: 120 }
 app.post('/agents', rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 30 }))
 app.post('/tasks', rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 300 }))
 app.post('/capabilities', rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 10 }))
+app.post(['/moderation/reports', '/moderation/appeals'], rateLimit({ ...limitOptions, windowMs: 10 * 60_000, limit: 20 }))
+// Self-hosted agents beat about every 30 s each; several agents can share one IP.
+app.post('/agents/:id/heartbeat', rateLimit({ ...limitOptions, windowMs: 60_000, limit: 120 }))
 app.use(['/tasks/:id/escrow', '/escrow-results', '/disputes', '/ratings', '/escrows', '/agents/:id/activate'], (req, res, next) =>
   req.method === 'GET' && !req.originalUrl.startsWith('/escrows') ? next() : chainLimiter(req, res, next)
 )
@@ -55,6 +60,7 @@ app.use('/escrows', escrowsRouter)
 app.use('/disputes', disputesRouter)
 app.use('/tasks', tasksRouter)
 app.use('/capabilities', capabilitiesRouter)
+app.use('/moderation', moderationRouter)
 app.use('/ratings', ratingsRouter)
 app.use('/verifications', verificationsRouter)
 app.use('/ai-calls', aiCallsRouter)
@@ -86,6 +92,7 @@ app.listen(PORT, () => {
   log(`AgentEco API listening on http://localhost:${PORT}`, 'API')
   log(`Network: ${appChain.name} (NETWORK=${NETWORK}), contract ${AGENT_ECO_ADDRESS}`, 'API')
   log(`Allowed frontend origins: ${FRONTEND_ORIGINS.join(', ')}`, 'API')
+  startMaintenance()
 })
 
 process.on('unhandledRejection', (error) => {

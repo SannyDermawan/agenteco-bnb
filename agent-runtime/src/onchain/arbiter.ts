@@ -14,22 +14,23 @@ export interface ArbiterSetup {
   /** AgentEco.arbiter() */
   arbiter: Address
   /** Present when the arbiter is an ArbiterCouncil. */
-  council: { address: Address; members: Address[]; rulingThreshold: number } | null
+  council: { address: Address; members: Address[]; rulingThreshold: number; adminThreshold: number } | null
 }
 
 export async function readArbiterSetup(publicClient: PublicClient, agentEco: Address = AGENT_ECO_ADDRESS): Promise<ArbiterSetup> {
   const arbiter = await publicClient.readContract({ address: agentEco, abi: AGENT_ECO_ABI, functionName: 'arbiter' })
   const code = await publicClient.getCode({ address: arbiter })
   if (!code || code === '0x') return { arbiter, council: null }
-  const [members, rulingThreshold, councilEco] = await Promise.all([
+  const [members, rulingThreshold, adminThreshold, councilEco] = await Promise.all([
     publicClient.readContract({ address: arbiter, abi: ARBITER_COUNCIL_ABI, functionName: 'getMembers' }),
     publicClient.readContract({ address: arbiter, abi: ARBITER_COUNCIL_ABI, functionName: 'rulingThreshold' }),
+    publicClient.readContract({ address: arbiter, abi: ARBITER_COUNCIL_ABI, functionName: 'adminThreshold' }),
     publicClient.readContract({ address: arbiter, abi: ARBITER_COUNCIL_ABI, functionName: 'agentEco' }),
   ])
   if (councilEco.toLowerCase() !== agentEco.toLowerCase()) {
     throw new Error(`The arbiter ${arbiter} is a council for another contract (${councilEco}).`)
   }
-  return { arbiter, council: { address: arbiter, members: [...members], rulingThreshold: Number(rulingThreshold) } }
+  return { arbiter, council: { address: arbiter, members: [...members], rulingThreshold: Number(rulingThreshold), adminThreshold: Number(adminThreshold) } }
 }
 
 /** Whether `address` can rule: it is the arbiter wallet, or a member of the arbiter council. */

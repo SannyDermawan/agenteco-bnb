@@ -19,7 +19,7 @@ contract AgentEcoReentrancyTest is Test {
     function setUp() public {
         vm.warp(1_700_000_000);
         token = new ReentrantToken();
-        eco = new AgentEco(address(token), arbiter, 120, 120, 900, 1);
+        eco = new AgentEco(address(token), arbiter, 120, 120, 900, 1, 0, address(0xFEE));
         token.mint(buyer, 100e18);
         vm.prank(buyer);
         token.approve(address(eco), type(uint256).max);

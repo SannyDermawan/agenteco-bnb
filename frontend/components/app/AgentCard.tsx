@@ -9,6 +9,7 @@ import { displayStars, formatReputationLine, onchainRawTooltip } from '@/lib/web
 import { useSellerRating } from '@/lib/useSellerRating'
 import { TOKEN_SYMBOL } from '@/lib/web3/network'
 import { capabilityLabel } from '@/lib/capabilityTemplates'
+import { NewBadge } from './moderation/ListingBadges'
 
 /** For an agent with an on-chain wallet, reputation is read live from AgentEco.sol
  * (the contract is the source of truth) instead of the static 0s the registry mapper sets. */
@@ -24,6 +25,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
           <BrandMarkIcon className="h-4 w-4" />
         </span>
         <div className="flex items-center gap-2">
+          <NewBadge createdAt={agent.createdAt} />
           {agent.hosted !== undefined && (
             <span
               className="rounded-full border border-white/[0.08] bg-[#0B0C11] px-2 py-0.5 text-[10.5px] text-[#8B8D96]"

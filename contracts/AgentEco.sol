@@ -52,13 +52,21 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  *   older one and ids never collide in the off-chain records.
  * The arbiter may be a contract — e.g. ArbiterCouncil, a small multisig.
  *
+ * Version 3 adds the platform fee:
+ * - a share of every settled payment (feeBps, in basis points: 250 = 2.5%)
+ *   goes to the treasury, the rest to the seller. Refunds carry no fee.
+ * - the rate is fixed per escrow when it is created, so a later change never
+ *   touches a deal already agreed; it can never exceed MAX_FEE_BPS (10%).
+ * - only the arbiter (the ArbiterCouncil, by an admin vote) can change the
+ *   rate or the treasury.
+ *
  * Compiled with the optimizer (runs = 200) and viaIR off. The escrow
  * struct is read through several small getters to stay clear of the
  * legacy pipeline's "stack too deep" limit.
  */
 contract AgentEco is ReentrancyGuard {
 
-    string public constant VERSION = "2";
+    string public constant VERSION = "3";
 
     // =============================================================
     // CONFIGURATION
@@ -97,6 +105,18 @@ contract AgentEco is ReentrancyGuard {
 
     /// Seconds the arbiter has, after a dispute is raised, to resolve it.
     uint256 public immutable disputeTimeout;
+
+    /// The platform fee can never be set above 10%.
+    uint256 public constant MAX_FEE_BPS = 1000;
+
+    /// Platform fee on a settled payment, in basis points (250 = 2.5%). New escrows take this rate.
+    uint256 public feeBps;
+
+    /// Where platform fees are paid.
+    address public treasury;
+
+    /// Sum of every platform fee paid out, in token base units.
+    uint256 public totalFeesCollected;
 
     // =============================================================
     // ENUMS
@@ -182,6 +202,9 @@ contract AgentEco is ReentrancyGuard {
 
         /// Whether the buyer has already rated the seller for this escrow
         bool rated;
+
+        /// The platform fee rate (basis points) fixed when the escrow was created
+        uint256 feeBps;
     }
 
     struct Reputation {
@@ -310,6 +333,17 @@ contract AgentEco is ReentrancyGuard {
         address indexed pendingArbiter
     );
 
+    event FeeUpdated(
+        uint256 feeBps,
+        address indexed treasury
+    );
+
+    event FeeCharged(
+        uint256 indexed escrowId,
+        address indexed treasury,
+        uint256 fee
+    );
+
     // =============================================================
     // MODIFIERS
     // =============================================================
@@ -356,7 +390,9 @@ contract AgentEco is ReentrancyGuard {
         uint256 minWindow_,
         uint256 acceptTimeout_,
         uint256 disputeTimeout_,
-        uint256 firstEscrowId_
+        uint256 firstEscrowId_,
+        uint256 feeBps_,
+        address treasury_
     ) {
         require(usdtToken != address(0), "Invalid USDT address");
         require(arbiter_ != address(0), "Invalid arbiter");
@@ -371,6 +407,8 @@ contract AgentEco is ReentrancyGuard {
         );
 
         require(firstEscrowId_ > 0, "Invalid first escrow id");
+        require(feeBps_ <= MAX_FEE_BPS, "Fee too high");
+        require(treasury_ != address(0), "Invalid treasury");
 
         USDT = usdtToken;
         arbiter = arbiter_;
@@ -379,6 +417,10 @@ contract AgentEco is ReentrancyGuard {
         disputeTimeout = disputeTimeout_;
         firstEscrowId = firstEscrowId_;
         nextEscrowId = firstEscrowId_;
+        feeBps = feeBps_;
+        treasury = treasury_;
+
+        emit FeeUpdated(feeBps_, treasury_);
     }
 
     // =============================================================
@@ -410,6 +452,30 @@ contract AgentEco is ReentrancyGuard {
         pendingArbiter = address(0);
 
         emit ArbiterUpdated(previous, msg.sender);
+    }
+
+    // =============================================================
+    // PLATFORM FEE
+    // =============================================================
+
+    /**
+     * @notice Set the platform fee for new escrows, and where fees are paid.
+     * Only the arbiter: the ArbiterCouncil, through an admin vote. Escrows that
+     * already exist keep the rate they were created with.
+     */
+    function setFee(uint256 feeBps_, address treasury_) external onlyArbiter {
+        require(feeBps_ <= MAX_FEE_BPS, "Fee too high");
+        require(treasury_ != address(0), "Invalid treasury");
+
+        feeBps = feeBps_;
+        treasury = treasury_;
+
+        emit FeeUpdated(feeBps_, treasury_);
+    }
+
+    /// @notice The fee a payment of `amount` would carry at the current rate.
+    function quoteFee(uint256 amount) external view returns (uint256) {
+        return (amount * feeBps) / 10_000;
     }
 
     // =============================================================
@@ -495,6 +561,8 @@ contract AgentEco is ReentrancyGuard {
         escrow.executionWindow = executionWindow;
         escrow.reviewWindow = reviewWindow;
         escrow.taskHash = taskHash;
+        // The fee is fixed now: a later rate change never touches an agreed deal.
+        escrow.feeBps = feeBps;
 
         emit EscrowCreated(
             escrowId,
@@ -1118,16 +1186,25 @@ contract AgentEco is ReentrancyGuard {
     // INTERNAL SETTLEMENT + REPUTATION HELPERS
     // =============================================================
 
+    /// Pays a settled escrow: the platform fee to the treasury, the rest to the seller.
     function _settle(Escrow storage escrow, uint256 escrowId) internal {
         escrow.status = OrderStatus.SETTLED;
         escrow.settledAt = block.timestamp;
 
+        // Reputation counts the full price the buyer paid.
         _recordSuccess(escrow.seller, escrow.amount);
+
+        uint256 fee = (escrow.amount * escrow.feeBps) / 10_000;
+        if (fee > 0) {
+            totalFeesCollected += fee;
+            _safeTransfer(USDT, treasury, fee);
+            emit FeeCharged(escrowId, treasury, fee);
+        }
 
         _safeTransfer(
             USDT,
             escrow.seller,
-            escrow.amount
+            escrow.amount - fee
         );
 
         emit EscrowSettled(
@@ -1235,6 +1312,22 @@ contract AgentEco is ReentrancyGuard {
     /**
      * @notice Hash of the off-chain delivered result, if any.
      */
+    /**
+     * @notice The platform fee of an escrow: its rate (basis points, fixed at
+     * creation) and the amount that goes to the treasury if it settles.
+     */
+    function getEscrowFee(
+        uint256 escrowId
+    )
+        external
+        view
+        escrowExists(escrowId)
+        returns (uint256 rateBps, uint256 fee)
+    {
+        Escrow storage escrow = escrows[escrowId];
+        return (escrow.feeBps, (escrow.amount * escrow.feeBps) / 10_000);
+    }
+
     function getResultHash(
         uint256 escrowId
     )

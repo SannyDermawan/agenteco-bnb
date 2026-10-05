@@ -54,7 +54,7 @@ contract DeployV2 is Script {
 
         // 1. Contracts
         vm.startBroadcast(deployerKey);
-        eco = new AgentEco(usdt, arbiter, minWindow, acceptTimeout, disputeTimeout, firstEscrowId);
+        eco = new AgentEco(usdt, arbiter, minWindow, acceptTimeout, disputeTimeout, firstEscrowId, 0, deployer);
         council = new ArbiterCouncil(
             address(eco),
             members,

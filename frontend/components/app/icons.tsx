@@ -78,6 +78,26 @@ export function CreateAgentIcon(props: IconProps) {
   )
 }
 
+/** A plug: connect your own agent. */
+export function PlugIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7.5 2.5v3.5M12.5 2.5v3.5" />
+      <path d="M5 6h10v3a5 5 0 0 1-10 0V6Z" />
+      <path d="M10 14v3.5" />
+    </svg>
+  )
+}
+
+export function FlagIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4.5 17.5v-14" />
+      <path d="M4.5 3.5h9l-1.8 3.2 1.8 3.3h-9" />
+    </svg>
+  )
+}
+
 export function OrdersIcon(props: IconProps) {
   return (
     <svg {...base(props)}>

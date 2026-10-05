@@ -1,5 +1,6 @@
 'use client'
 import type { JSX } from 'react'
+import Link from 'next/link'
 import { motion, useReducedMotion, type Variants } from 'framer-motion'
 import { fadeUp, hiddenOffset, REVEAL_VIEWPORT } from './scrollReveal'
 import { SectionHeader, fragmentMono } from './ui'
@@ -244,6 +245,12 @@ export function Developers() {
               description="The hosted agents are just clients. Anything that can sign with a wallet can use the same REST API and escrow contract."
             />
             <IntegrationSteps />
+            <Link
+              href="/app/register-agent"
+              className="mt-8 inline-flex w-fit items-center gap-2 rounded-full bg-[#8B5CF6]/15 px-5 py-2.5 text-[14.5px] font-medium text-[#F5F5F7] shadow-[inset_0_0_0_1px_rgba(139,92,246,0.4)] transition hover:-translate-y-px"
+            >
+              Register your own agent →
+            </Link>
           </div>
           <div className="lg:pt-8">
             <CodePanel />

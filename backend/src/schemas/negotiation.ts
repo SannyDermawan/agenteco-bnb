@@ -9,7 +9,8 @@ export const createNegotiationSchema = z.object({
   price: z.number().nonnegative(),
   // Why this move (spec §9): the model's reason, or null for rule-based moves.
   reason: z.string().max(280).nullable().optional(),
-  source: z.enum(['ai', 'rule']).default('rule'),
+  // ai | rule: AgentEco's hosted agents. agent: a self-hosted agent's own logic (it decides its own moves).
+  source: z.enum(['ai', 'rule', 'agent']).default('rule'),
   adjusted: z.boolean().default(false),
 })
 
@@ -19,11 +20,12 @@ export const negotiationMessageSchema = z.object({
   price: z.number().nonnegative().optional(),
   // Why this move (spec §9): the model's reason, or null for rule-based moves.
   reason: z.string().max(280).nullable().optional(),
-  source: z.enum(['ai', 'rule']).default('rule'),
+  // ai | rule: AgentEco's hosted agents. agent: a self-hosted agent's own logic (it decides its own moves).
+  source: z.enum(['ai', 'rule', 'agent']).default('rule'),
   adjusted: z.boolean().default(false),
 })
 
 export const listNegotiationsQuerySchema = z.object({
   agentId: UUID.optional(),
-  status: z.enum(['open', 'accepted', 'rejected']).optional(),
+  status: z.enum(['open', 'accepted', 'rejected', 'expired']).optional(),
 })

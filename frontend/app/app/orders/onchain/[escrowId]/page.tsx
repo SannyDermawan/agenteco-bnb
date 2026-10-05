@@ -11,6 +11,7 @@ import { PageFade } from '@/components/app/PageFade'
 import { SessionGate } from '@/components/app/SessionGate'
 import { EscrowAccessGate } from '@/components/app/EscrowAccessGate'
 import { agentEcoFor } from '@/lib/web3/abi'
+import { EscrowFeeBreakdown } from '@/components/app/PlatformFee'
 import { explorerAddressUrl, TOKEN_SYMBOL } from '@/lib/web3/network'
 import { useEscrowBasic, useEscrowTimestamps, useReputation, useUsdtDecimals } from '@/lib/web3/hooks'
 import { useEscrowTxHashes } from '@/lib/web3/escrowEvents'
@@ -179,6 +180,7 @@ function OnChainOrder({ escrowIdParam }: { escrowIdParam: string }) {
               <div className="mt-2 text-[24px] font-semibold tracking-[-0.02em] text-[#F5F5F7]">
                 {amountFormatted} <span className="text-[13px] font-medium text-[#8B8D96]">{TOKEN_SYMBOL}</span>
               </div>
+              <EscrowFeeBreakdown escrowId={escrowId} amount={amount} decimals={decimals} />
             </NeumorphicCard>
 
             {rep && (

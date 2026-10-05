@@ -7,14 +7,15 @@ import {
   AGENT_ECO_ADDRESS,
   ARBITER_COUNCIL_ABI,
   ERC20_ABI,
-  LEGACY_AGENT_ECO_ADDRESS,
+  ALL_AGENT_ECO_ADDRESSES,
   USDT_ADDRESS,
   agentEcoFor,
+  hasPlatformFee,
 } from './abi'
 import { summarizeReputation } from './reputation'
 
 const contract = { address: AGENT_ECO_ADDRESS, abi: AGENT_ECO_ABI } as const
-/** The contract an escrow lives on: v2, or v1 for ids below 1001 (see ./network.ts). */
+/** The contract an escrow lives on: the current deployment, or the legacy one its id falls in (see ./network.ts). */
 const contractFor = (escrowId: bigint | undefined) =>
   ({ address: escrowId === undefined ? AGENT_ECO_ADDRESS : agentEcoFor(escrowId), abi: AGENT_ECO_ABI }) as const
 
@@ -58,11 +59,12 @@ export function useEscrowTimestamps(escrowId?: bigint) {
 
 /**
  * The arbiter, read from AgentEco.sol itself rather than hardcoded — so a new
- * deployment or an arbiter handover is picked up automatically.
+ * deployment or an arbiter handover is picked up automatically. With an
+ * escrowId, the arbiter of the deployment holding it (each has its own council).
  */
-export function useArbiter() {
+export function useArbiter(escrowId?: bigint) {
   return useReadContract({
-    ...contract,
+    ...contractFor(escrowId),
     functionName: 'arbiter',
     query: { staleTime: 60_000 },
   })
@@ -76,11 +78,12 @@ export interface ArbiterCouncilInfo {
 
 /**
  * The arbiter council, when AgentEco's arbiter is an ArbiterCouncil contract
- * (v2) rather than a wallet: its members and how many votes a ruling needs.
+ * (from v2) rather than a wallet: its members and how many votes a ruling needs.
  * Null for a wallet arbiter (the council reads fail on an address with no code).
+ * With an escrowId, the council of the deployment holding it.
  */
-export function useArbiterCouncil(): ArbiterCouncilInfo | null | undefined {
-  const { data: arbiter } = useArbiter()
+export function useArbiterCouncil(escrowId?: bigint): ArbiterCouncilInfo | null | undefined {
+  const { data: arbiter } = useArbiter(escrowId)
   const { data, isPending } = useReadContracts({
     allowFailure: true,
     contracts: arbiter
@@ -97,10 +100,13 @@ export function useArbiterCouncil(): ArbiterCouncilInfo | null | undefined {
   return { address: arbiter, members: members.result as readonly `0x${string}`[], rulingThreshold: Number(threshold.result) }
 }
 
-/** True when `address` can rule disputes: the arbiter wallet, or a member of the arbiter council. */
-export function useIsArbiter(address?: string) {
-  const { data: arbiter } = useArbiter()
-  const council = useArbiterCouncil()
+/**
+ * True when `address` can rule disputes: the arbiter wallet, or a member of the
+ * arbiter council — of the deployment holding `escrowId`, or the current one.
+ */
+export function useIsArbiter(address?: string, escrowId?: bigint) {
+  const { data: arbiter } = useArbiter(escrowId)
+  const council = useArbiterCouncil(escrowId)
   if (!address || !arbiter) return false
   const a = address.toLowerCase()
   if (council) return council.members.some((m) => m.toLowerCase() === a)
@@ -187,11 +193,11 @@ export function useEscrowHashes(escrowId?: bigint, live = true) {
   })
 }
 
-const REPUTATION_CONTRACTS = LEGACY_AGENT_ECO_ADDRESS ? [AGENT_ECO_ADDRESS, LEGACY_AGENT_ECO_ADDRESS] : [AGENT_ECO_ADDRESS]
+const REPUTATION_CONTRACTS = ALL_AGENT_ECO_ADDRESSES
 
 /**
  * On-chain reputation for `address`, as a named summary (see ./reputation.ts) —
- * summed over AgentEco v2 and v1, so a seller keeps its history.
+ * summed over every AgentEco deployment (v3, v2, v1), so a seller keeps its history.
  */
 export function useReputation(address?: `0x${string}`) {
   return useReadContracts({
@@ -208,6 +214,46 @@ export function useReputation(address?: `0x${string}`) {
       },
     },
   })
+}
+
+export interface PlatformFee {
+  /** Basis points: 250 = 2.5%. */
+  bps: number
+  treasury: `0x${string}`
+}
+
+/**
+ * The platform fee new escrows are created with (AgentEco v3): a share of the
+ * price paid to the treasury when an escrow settles to the seller. Refunds are free.
+ */
+export function usePlatformFee() {
+  return useReadContracts({
+    allowFailure: false,
+    contracts: [
+      { ...contract, functionName: 'feeBps' },
+      { ...contract, functionName: 'treasury' },
+    ],
+    query: {
+      staleTime: 60_000,
+      select: ([bps, treasury]): PlatformFee => ({ bps: Number(bps), treasury }),
+    },
+  })
+}
+
+/**
+ * The fee one escrow pays, fixed when it was created: [rate in bps, fee in token
+ * units]. Escrows on v1 and v2 have no fee, so this is [0, 0] for them without a read.
+ */
+export function useEscrowFee(escrowId?: bigint) {
+  const charged = escrowId !== undefined && hasPlatformFee(escrowId)
+  const read = useReadContract({
+    ...contract,
+    functionName: 'getEscrowFee',
+    args: charged ? [escrowId] : undefined,
+    query: { enabled: charged, staleTime: Infinity },
+  })
+  if (escrowId !== undefined && !charged) return { data: [BigInt(0), BigInt(0)] as const, isPending: false }
+  return { data: read.data, isPending: read.isPending }
 }
 
 export function useUsdtBalance(address?: `0x${string}`) {

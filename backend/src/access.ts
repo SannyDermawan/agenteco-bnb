@@ -5,7 +5,7 @@ import { READ_SESSION_HEADER } from '../../agent-runtime/src/shared/session.ts'
 import { AGENT_ECO_ABI } from './abi/agentEcoAbi.ts'
 import { verifyOwnerAuth, type AuthResult } from './auth.ts'
 import { prisma } from './db.ts'
-import { agentEcoFor, appChain, appTransport } from './network.ts'
+import { AGENT_ECO_ADDRESS, agentEcoFor, appChain, appTransport } from './network.ts'
 import { canRule, readArbiterSetup, type ArbiterSetup } from '../../agent-runtime/src/onchain/arbiter.ts'
 import { FRONTEND_HOSTS } from './origins.ts'
 import { verifyReadSession } from './session.ts'
@@ -52,26 +52,34 @@ export async function requireViewer(req: Request, res: Response): Promise<string
   return viewer
 }
 
-let arbiterSetup: { at: number; setup: Promise<ArbiterSetup> } | null = null
+const arbiterSetups = new Map<string, { at: number; setup: Promise<ArbiterSetup> }>()
 // The arbiter role can be handed over (and council members change by vote), so re-read now and then.
 const ARBITER_TTL_MS = 60_000
 
-/** The contract's arbiter: a wallet, or an ArbiterCouncil and its members. Cached for a minute. */
-export function getArbiterSetup(): Promise<ArbiterSetup> {
-  if (!arbiterSetup || Date.now() - arbiterSetup.at > ARBITER_TTL_MS) {
-    const setup = readArbiterSetup(publicClient as never).catch((error) => {
-      arbiterSetup = null // retry on the next request
-      throw error
-    })
-    arbiterSetup = { at: Date.now(), setup }
-  }
-  return arbiterSetup.setup
+/**
+ * A deployment's arbiter: a wallet, or an ArbiterCouncil and its members.
+ * The current deployment's by default. Cached for a minute.
+ */
+export function getArbiterSetup(agentEco: Address = AGENT_ECO_ADDRESS): Promise<ArbiterSetup> {
+  const key = agentEco.toLowerCase()
+  const cached = arbiterSetups.get(key)
+  if (cached && Date.now() - cached.at <= ARBITER_TTL_MS) return cached.setup
+  const setup = readArbiterSetup(publicClient as never, agentEco).catch((error) => {
+    arbiterSetups.delete(key) // retry on the next request
+    throw error
+  })
+  arbiterSetups.set(key, { at: Date.now(), setup })
+  return setup
 }
 
-/** The arbiter wallet itself, or any member of the arbiter council. */
-export async function isArbiter(viewer: string): Promise<boolean> {
+/**
+ * The arbiter wallet itself, or any member of the arbiter council: of the
+ * deployment holding `escrowId`, or of the current one when none is given.
+ */
+export async function isArbiter(viewer: string, escrowId?: string): Promise<boolean> {
   try {
-    return canRule(await getArbiterSetup(), viewer)
+    const eco = escrowId !== undefined && isEscrowId(escrowId) ? agentEcoFor(BigInt(escrowId)) : AGENT_ECO_ADDRESS
+    return canRule(await getArbiterSetup(eco), viewer)
   } catch {
     return false
   }

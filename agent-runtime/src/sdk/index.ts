@@ -8,7 +8,7 @@
  * See agent-runtime/README.md for a walkthrough.
  */
 export { createSellerAgent } from './seller.ts'
-export type { Job, DisputeContext, SellerAgent, SellerAgentOptions } from './seller.ts'
+export type { Job, DisputeContext, SellerAgent, SellerAgentOptions, Offer, OfferDecision } from './seller.ts'
 export { hire } from './buyer.ts'
 export type { HireOptions, HireResult, Review } from './buyer.ts'
 export { registerCapability, listCapabilities } from './registry.ts'

@@ -12,7 +12,8 @@ import { mentionsAiUnavailable, prepareJob, type PreparedJob } from '../capabili
 import { getTaskByEscrow } from '../tasksClient.ts'
 import { getEscrowResult, publishEscrowResult } from '../resultsClient.ts'
 import { getDispute, submitDisputeResponseText } from '../disputesClient.ts'
-import { SELLER_RESPONSE_WINDOW_SECONDS } from '../durations.ts'
+import { HEARTBEAT_SECONDS, SELLER_RESPONSE_WINDOW_SECONDS } from '../durations.ts'
+import { buildAuthHeaders } from '../authHeaders.ts'
 import { resolveCapability } from './capability.ts'
 import { defendWithAi, runPlatformJob, type AiModel } from './ai.ts'
 import { DEFAULT_API_URL, type Logger, consoleLogger, sleep } from './common.ts'
@@ -41,18 +42,56 @@ export interface DisputeContext {
   reason: string | null
 }
 
+/** A buyer's offer, handed to your `onOffer` when it is your turn to answer. */
+export interface Offer {
+  negotiationId: string
+  capability: string
+  buyerAgentId: string
+  /** The buyer's latest offer, in the settlement token. */
+  price: number
+  /** Your listing price. */
+  listPrice: number
+  /** How many counter-offers you have already made in this negotiation. */
+  countersSoFar: number
+  /** Every move so far, oldest first. */
+  history: { side: 'buyer' | 'seller'; action: string; price: number | null; reason: string | null }[]
+}
+
+/** Your answer to an offer. Accept takes the buyer's price; a counter needs a positive price. A reason (up to 280 characters) is shown to the buyer. */
+export type OfferDecision =
+  | { action: 'accept'; reason?: string }
+  | { action: 'counter'; price: number; reason?: string }
+  | { action: 'reject'; reason?: string }
+
 export interface SellerAgentOptions {
   /** The seller's own wallet: it signs registry writes and on-chain moves, and is paid. Needs a little native gas. */
   privateKey: Hex
   /** AgentEco API. Default: AGENTECO_API_URL, else the public testnet API. */
   apiUrl?: string
-  name: string
-  description: string
+  /**
+   * The listing you created on the app's Register Own Agent page. The agent attaches to it:
+   * its name, description, capability and price come from the listing, and this key must be
+   * the listing's agent wallet. Without `agentId`, the agent lists itself from `name`,
+   * `description`, `capability` and `price`, owned by this key.
+   */
+  agentId?: string
+  name?: string
+  description?: string
   /** What you sell: a platform capability id, or one you published in the registry. */
-  capability: string
-  /** Listing price, and the lowest you will settle for (the floor is never shown to buyers). */
-  price: number
-  floor: number
+  capability?: string
+  /** Listing price, in the settlement token. */
+  price?: number
+  /**
+   * The lowest you settle for, used by the default negotiation policy. It stays on your
+   * machine: AgentEco never stores or sees it. Default: the listing price (no discount).
+   */
+  floor?: number
+  /**
+   * Decide each offer yourself (your own rules or model). Without it, the default policy
+   * concedes from the listing price toward `floor` in up to three steps. AgentEco only
+   * relays the moves; a side that stays silent too long lets the negotiation expire.
+   */
+  onOffer?: (offer: Offer) => Promise<OfferDecision> | OfferDecision
   category?: 'Research' | 'Data' | 'Content' | 'Automation'
   /**
    * Your work. Return the result object; it must match the capability's output
@@ -81,8 +120,9 @@ export interface SellerAgentOptions {
 export interface SellerAgent {
   /** The seller wallet's address. */
   readonly address: `0x${string}`
-  /** Registers (or syncs) the listing, then serves until stop(). */
+  /** Registers (or attaches to) the listing, then serves until stop(). */
   start(): Promise<void>
+  /** Stops serving and tells AgentEco the agent is offline. */
   stop(): void
   /** One pass over negotiations and escrows — for tests and custom loops. */
   runOnce(): Promise<void>
@@ -95,6 +135,22 @@ const DISPUTED = 4
 const SETTLED = 5
 const REFUNDED = 6
 const ZERO_HASH = `0x${'0'.repeat(64)}`
+
+/**
+ * An `onOffer` answer, checked before it is relayed, so a malformed answer never reaches the other side.
+ * A counter that already meets the other side's offer is simply an accept.
+ */
+export function checkDecision(d: OfferDecision, offered: number, side: 'buyer' | 'seller'): OfferDecision {
+  const reason = typeof d?.reason === 'string' && d.reason.trim() ? d.reason.trim().slice(0, 280) : undefined
+  if (d?.action === 'accept') return { action: 'accept', reason }
+  if (d?.action === 'reject') return { action: 'reject', reason }
+  if (d?.action === 'counter' && typeof d.price === 'number' && Number.isFinite(d.price) && d.price > 0) {
+    const price = Math.round(d.price * 1e6) / 1e6
+    const meets = side === 'seller' ? price <= offered : price >= offered
+    return meets ? { action: 'accept', reason } : { action: 'counter', price, reason }
+  }
+  throw new Error(`onOffer returned ${JSON.stringify(d)}; expected { action: 'accept' | 'reject' } or { action: 'counter', price }`)
+}
 
 /** Tries per escrow before a failing job is dropped (each try may cost a model call). */
 export const MAX_ATTEMPTS = 5
@@ -120,30 +176,36 @@ export function retryDecision(failures: number, deadlinePassed: boolean): { give
  */
 export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
   const apiUrl = options.apiUrl ?? DEFAULT_API_URL
-  const log = options.log ?? consoleLogger(options.name)
+  const log = options.log ?? consoleLogger(options.name ?? 'seller')
   const pollMs = options.pollMs ?? 3000
   const onchain = createOnchainClients(options.privateKey, RPC_URL)
   const account = onchain.account
-  const runtime = new DemoAgentRuntime({
-    name: options.name,
-    role: 'seller',
-    capabilities: [options.capability],
-    description: options.description,
-    category: options.category ?? 'Automation',
-    service: options.name,
-    basePrice: options.price,
-    minimumPrice: options.floor,
-  })
 
-  if (!options.handle && !isCapabilityId(options.capability)) {
-    throw new Error(`"${options.capability}" is a community capability — pass a handle(job) that produces its result.`)
+  function checkWorker(capability: string) {
+    if (!options.handle && !isCapabilityId(capability)) {
+      throw new Error(`"${capability}" is a community capability — pass a handle(job) that produces its result.`)
+    }
+    // The four platform capabilities are written by an AI: bring one (or your own handler).
+    if (!options.handle && !options.ai) {
+      throw new Error(`"${capability}" needs an AI: pass ai (e.g. openAiCompatible({ baseUrl, apiKey, model })) or your own handle(job).`)
+    }
   }
-  // The four platform capabilities are written by an AI: bring one (or your own handler).
-  if (!options.handle && !options.ai) {
-    throw new Error(`"${options.capability}" needs an AI: pass ai (e.g. openAiCompatible({ baseUrl, apiKey, model })) or your own handle(job).`)
+
+  if (!options.agentId) {
+    for (const field of ['name', 'description', 'capability', 'price'] as const) {
+      if (options[field] === undefined) throw new Error(`Pass ${field}, or the agentId of the listing you registered in the app.`)
+    }
+    checkWorker(options.capability!)
   }
+
+  /** What this agent sells and asks: from the options, or from the listing it attaches to. */
+  let listing: { name: string; capability: string; price: number } | null = options.agentId
+    ? null
+    : { name: options.name!, capability: options.capability!, price: options.price! }
+  let runtime: DemoAgentRuntime | null = null
 
   let agentId: string | null = null
+  let lastBeat = 0
   let running = false
   /** Escrows whose last try failed: when the next try may run, and how many failed in a row (see retryDecision). */
   const retries = new Map<bigint, { failures: number; nextTryAt: number }>()
@@ -152,23 +214,114 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
   /** Results whose on-chain hash is committed, kept until the API has the plaintext. */
   const unpublished = new Map<bigint, { capability: string; result: Record<string, unknown> }>()
 
+  /** The listing registered in the app: this key must be its agent wallet. */
+  async function attach(id: string): Promise<{ name: string; capability: string; price: number }> {
+    const res = await fetch(`${apiUrl}/agents/${id}`)
+    if (!res.ok) throw new Error(`Listing ${id} not found (${res.status}). Copy the agent id from the Register Own Agent page.`)
+    const agent = (await res.json()) as {
+      role: string
+      name: string
+      capabilities: string[]
+      price: string
+      walletAddress: string | null
+      taskStatus: string | null
+    }
+    if (agent.role !== 'seller') throw new Error(`Listing ${id} is not a seller.`)
+    if (agent.taskStatus !== null) throw new Error(`Listing ${id} is hosted by AgentEco; a self-hosted agent cannot run it.`)
+    if (agent.walletAddress?.toLowerCase() !== account.address.toLowerCase()) {
+      throw new Error(`Listing ${id} names the agent wallet ${agent.walletAddress}, but this key is ${account.address}. Use that wallet's key, or register this one.`)
+    }
+    if (options.capability && options.capability !== agent.capabilities[0]) {
+      throw new Error(`Listing ${id} sells "${agent.capabilities[0]}", not "${options.capability}".`)
+    }
+    return { name: agent.name, capability: agent.capabilities[0], price: Number(agent.price) }
+  }
+
   async function register(): Promise<string> {
-    const agent = await registerOrSyncSelf(runtime.config, { apiUrl, account, walletAddress: account.address })
-    log(`listed as ${agent.id} — ${options.capability} at ${options.price} (floor ${options.floor})`)
-    return agent.id
+    let id: string
+    if (options.agentId) {
+      listing = await attach(options.agentId)
+      checkWorker(listing.capability)
+      id = options.agentId
+    } else {
+      // The floor is not sent: it is this agent's private business, kept on this machine.
+      const agent = await registerOrSyncSelf(
+        {
+          name: options.name!,
+          role: 'seller',
+          capabilities: [options.capability!],
+          description: options.description!,
+          category: options.category ?? 'Automation',
+          service: options.name!,
+          basePrice: options.price!,
+        },
+        { apiUrl, account, walletAddress: account.address }
+      )
+      id = agent.id
+    }
+    const l = listing!
+    runtime = new DemoAgentRuntime({
+      name: l.name,
+      role: 'seller',
+      capabilities: [l.capability],
+      description: '',
+      basePrice: l.price,
+      minimumPrice: options.floor ?? l.price,
+    })
+    const how = options.onOffer ? 'your own negotiation logic' : `floor ${options.floor ?? l.price}, kept on this machine`
+    log(`${options.agentId ? 'attached to' : 'listed as'} ${id} — ${l.capability} at ${l.price} (${how})`)
+    return id
+  }
+
+  /** Tells AgentEco this agent is running (or stopping): the marketplace shows it online only while it beats. */
+  async function heartbeat(id: string, online: boolean): Promise<void> {
+    const res = await fetch(`${apiUrl}/agents/${id}/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await buildAuthHeaders(account)) },
+      body: JSON.stringify({ online }),
+    })
+    if (!res.ok) throw new Error(`heartbeat failed (${res.status}): ${await res.text()}`)
+    lastBeat = Date.now()
   }
 
   async function negotiate(id: string): Promise<void> {
     for (const n of await listNegotiationsForAgent(apiUrl, account, id, 'open')) {
       if (!isMyTurn(n, 'seller')) continue
       const offered = Number(n.messages[n.messages.length - 1].price)
-      const decision = runtime.decideOnOffer(offered, countOffersBySide(n, 'seller'))
+      const countersSoFar = countOffersBySide(n, 'seller')
+      let decision: OfferDecision
+      let source: 'rule' | 'agent' = 'rule'
+      if (options.onOffer) {
+        try {
+          decision = checkDecision(
+            await options.onOffer({
+              negotiationId: n.id,
+              capability: n.capability,
+              buyerAgentId: n.buyerAgentId,
+              price: offered,
+              listPrice: listing!.price,
+              countersSoFar,
+              history: n.messages.map((m) => ({ side: m.side, action: m.action, price: m.price === null ? null : Number(m.price), reason: m.reason ?? null })),
+            }),
+            offered,
+            'seller'
+          )
+          source = 'agent'
+        } catch (error) {
+          // Tried again next poll; if it keeps failing, the negotiation expires and the buyer moves on.
+          log(`negotiation ${n.id.slice(0, 8)}: onOffer failed (${(error as Error).message}) — will retry`)
+          continue
+        }
+      } else {
+        decision = runtime!.decideOnOffer(offered, countersSoFar)
+      }
       log(`negotiation ${n.id.slice(0, 8)}: buyer offers ${offered} → ${decision.action}${decision.action === 'counter' ? ` ${decision.price}` : ''}`)
       await respondToNegotiation(apiUrl, account, n.id, {
         side: 'seller',
         action: decision.action,
         ...(decision.action === 'counter' ? { price: decision.price } : {}),
-        source: 'rule',
+        ...(decision.reason ? { reason: decision.reason } : {}),
+        source,
       })
     }
   }
@@ -194,7 +347,7 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
       log(`escrow #${escrowId}: the task does not match the on-chain taskHash — not taking it`)
       return null
     }
-    if (task.seller.toLowerCase() !== account.address.toLowerCase() || task.capability !== options.capability) {
+    if (task.seller.toLowerCase() !== account.address.toLowerCase() || task.capability !== listing!.capability) {
       log(`escrow #${escrowId}: the task is for another seller or capability — not taking it`)
       return null
     }
@@ -298,6 +451,7 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
 
   async function runOnce(): Promise<void> {
     agentId ??= await register()
+    if (Date.now() - lastBeat >= HEARTBEAT_SECONDS * 1000) await heartbeat(agentId, true)
     await negotiate(agentId)
     const mine = (await readAllEscrows(onchain.publicClient)).filter(
       (e) => e.seller.toLowerCase() === account.address.toLowerCase() && !finished.has(e.id)
@@ -354,6 +508,7 @@ export function createSellerAgent(options: SellerAgentOptions): SellerAgent {
     },
     stop() {
       running = false
+      if (agentId) heartbeat(agentId, false).catch((error) => log(`could not report going offline: ${(error as Error).message}`))
     },
     runOnce,
   }

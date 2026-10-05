@@ -41,7 +41,7 @@ abstract contract AgentEcoBase is Test {
     function _deploy(uint8 decimals) internal {
         vm.warp(1_700_000_000);
         token = new TestToken(decimals);
-        eco = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
+        eco = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1, 0, address(0xFEE));
         amount = 25 * 10 ** (decimals - 2); // 0.25 USDT
         token.mint(buyer, 1_000 * 10 ** decimals);
         vm.prank(buyer);
@@ -120,34 +120,34 @@ contract AgentEcoTest is AgentEcoBase {
 
     function test_constructor_rejectsZeroToken() public {
         vm.expectRevert("Invalid USDT address");
-        new AgentEco(address(0), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
+        new AgentEco(address(0), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1, 0, address(0xFEE));
     }
 
     function test_constructor_rejectsZeroArbiter() public {
         vm.expectRevert("Invalid arbiter");
-        new AgentEco(address(token), address(0), MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
+        new AgentEco(address(token), address(0), MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1, 0, address(0xFEE));
     }
 
     function test_constructor_rejectsZeroMinWindow() public {
         vm.expectRevert("Invalid min window");
-        new AgentEco(address(token), arbiter, 0, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1);
+        new AgentEco(address(token), arbiter, 0, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1, 0, address(0xFEE));
     }
 
     function test_constructor_rejectsAcceptTimeoutBelowMinWindow() public {
         vm.expectRevert("Invalid accept timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, MIN_WINDOW - 1, DISPUTE_TIMEOUT, 1);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, MIN_WINDOW - 1, DISPUTE_TIMEOUT, 1, 0, address(0xFEE));
     }
 
     function test_constructor_rejectsDisputeTimeoutBelowMinWindow() public {
         vm.expectRevert("Invalid dispute timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, MIN_WINDOW - 1, 1);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, MIN_WINDOW - 1, 1, 0, address(0xFEE));
     }
 
     function test_constructor_rejectsTimeoutsAboveMaxWindow() public {
         vm.expectRevert("Invalid accept timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, 90 days + 1, DISPUTE_TIMEOUT, 1);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, 90 days + 1, DISPUTE_TIMEOUT, 1, 0, address(0xFEE));
         vm.expectRevert("Invalid dispute timeout");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, 90 days + 1, 1);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, 90 days + 1, 1, 0, address(0xFEE));
     }
 
     // ------------------------------------------------------------------
@@ -745,7 +745,7 @@ contract AgentEcoTest is AgentEcoBase {
     // ------------------------------------------------------------------
 
     function test_firstEscrowId_continuesNumbering() public {
-        AgentEco v2 = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1000);
+        AgentEco v2 = new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 1000, 0, address(0xFEE));
         assertEq(v2.firstEscrowId(), 1000);
         assertEq(v2.nextEscrowId(), 1000);
         vm.prank(buyer);
@@ -758,11 +758,11 @@ contract AgentEcoTest is AgentEcoBase {
 
     function test_constructor_rejectsZeroFirstEscrowId() public {
         vm.expectRevert("Invalid first escrow id");
-        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 0);
+        new AgentEco(address(token), arbiter, MIN_WINDOW, ACCEPT_TIMEOUT, DISPUTE_TIMEOUT, 0, 0, address(0xFEE));
     }
 
     function test_version() public view {
-        assertEq(eco.VERSION(), "2");
+        assertEq(eco.VERSION(), "3");
         assertEq(eco.firstEscrowId(), 1);
     }
 

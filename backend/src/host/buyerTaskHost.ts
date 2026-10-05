@@ -202,12 +202,14 @@ export async function processHostedBuyerTask(agentRow: HostedBuyerAgentRow): Pro
   // 2. No live negotiation for this capability yet? Go find a seller —
   //    unless the owner paused this buyer. Steps 1, 3 and 4 still run while
   //    paused, so a seller already mid-deal is never left stranded.
-  const hasPendingNegotiation = allNegotiations.some((n) => n.capability === capability && n.status !== 'rejected')
+  // Rejected or expired: that seller is done with us; anything else is still live.
+  const ended = (status: string) => status === 'rejected' || status === 'expired'
+  const hasPendingNegotiation = allNegotiations.some((n) => n.capability === capability && !ended(n.status))
   if (!hasPendingNegotiation && agentRow.isOnline) {
     // A seller that already walked away from this capability won't take the
     // same opening offer again — reopening with it would just loop forever.
     const rejectedSellerIds = new Set(
-      allNegotiations.filter((n) => n.capability === capability && n.status === 'rejected').map((n) => n.sellerAgentId)
+      allNegotiations.filter((n) => n.capability === capability && ended(n.status)).map((n) => n.sellerAgentId)
     )
     const sellers = (await discoverAgents(API_URL, { role: 'seller', capability, onlineOnly: true })).filter(
       (s) => !rejectedSellerIds.has(s.id)
