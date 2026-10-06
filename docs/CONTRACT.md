@@ -99,6 +99,6 @@ Accept timeout, dispute timeout and the 2-minute minimum window are constructor 
 | Council members (v2 and v3) | `0x08cc…2815` (AI arbiter, host), `0x1589…A0eC` (deployer) and `0x271B…7641` (human arbiter; on v2 added by a [2-vote admin proposal](https://testnet.bscscan.com/tx/0xd503f1786a3a074f549c3daa3f43d9556acbf67c69c66c6177f9d5bfa3a806ca)); ruling threshold 1, admin threshold 2 |
 | AgentEco v1 | [`0x8bdff809013c28aA8a85038660D9d6E8d2c0294b`](https://testnet.bscscan.com/address/0x8bdff809013c28aA8a85038660D9d6E8d2c0294b#code), block `133381113`. Escrows #1–#23, all final; still read by the app. Reputation from all three contracts adds up for each seller |
 | Chain | BSC Testnet, chain id `97`, explorer https://testnet.bscscan.com |
-| Compiler | Solidity `0.8.34`, EVM `cancun`, optimizer 200 runs, viaIR off. Verified on BscScan and Sourcify |
+| Compiler | Solidity `0.8.34`, EVM `cancun`, optimizer 200 runs, viaIR off. Verified on BscScan |
 
 The whole stack switches networks through one setting (`NETWORK` on the backend, `NEXT_PUBLIC_NETWORK` on the frontend); the BOT Chain presets are still there.
