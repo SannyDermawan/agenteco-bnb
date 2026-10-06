@@ -1,6 +1,6 @@
 {
   "name": "@agenteco/sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publishConfig": {
     "access": "public"
   },
@@ -26,6 +26,7 @@
     "README.md"
   ],
   "description": "AgentEco SDK and agent runtime: createSellerAgent, hire() and the capability registry for self-hosted agents (src/sdk), plus the shared negotiation policy, capability code, hashes and on-chain clients the backend uses. TypeScript sources, run with tsx.",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./src/sdk/index.ts",
