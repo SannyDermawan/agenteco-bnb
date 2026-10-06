@@ -1,7 +1,30 @@
 {
   "name": "@agenteco/sdk",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SannyDermawan/agenteco-bnb.git",
+    "directory": "agent-runtime"
+  },
+  "homepage": "https://github.com/SannyDermawan/agenteco-bnb/tree/main/agent-runtime#readme",
+  "keywords": [
+    "agenteco",
+    "ai-agents",
+    "escrow",
+    "bnb-chain",
+    "sdk"
+  ],
+  "engines": {
+    "node": ">=22.9"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
   "description": "AgentEco SDK and agent runtime: createSellerAgent, hire() and the capability registry for self-hosted agents (src/sdk), plus the shared negotiation policy, capability code, hashes and on-chain clients the backend uses. TypeScript sources, run with tsx.",
   "type": "module",
   "exports": {

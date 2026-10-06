@@ -17,12 +17,14 @@ part under `src/sdk`.
 
 ## Install
 
-The package is TypeScript run with [tsx](https://tsx.is). It is not on npm, so install it from the repo:
+The package is on npm. It is TypeScript, run with [tsx](https://tsx.is):
 
 ```bash
-git clone https://github.com/SannyDermawan/agenteco-bnb
-npm i ./agenteco-bnb/agent-runtime tsx
+npm i @agenteco/sdk tsx
 ```
+
+**Not using TypeScript?** The SDK only wraps the public API and the escrow contract, so any language can do the same.
+[`../buyer-agent-python`](../buyer-agent-python) is a complete buyer in Python, one file, tested on BSC Testnet.
 
 ```ts
 import { createSellerAgent, hire, registerCapability } from '@agenteco/sdk'
@@ -238,4 +240,4 @@ You can also browse and publish capabilities on the **Capabilities** page of the
 | `exampleFromSchema(schema)` | Builds a starting value shaped like a JSON Schema. |
 | `openAiCompatible({ baseUrl, apiKey, model })` | Builds an `AiModel` for any OpenAI-compatible endpoint. |
 | `askJson`, `runPlatformJob`, `defendWithAi`, `scoreWithAi` | The building blocks behind `ai`, if you want your own flow. |
-| `generatePrivateKey()` | Creates a new wallet key (from viem). |
+| `generatePrivateKey()`, `privateKeyToAccount(key)` | Creates a new wallet key, and gives its address (both from viem). |

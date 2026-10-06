@@ -4,13 +4,18 @@ import { NeumorphicCard } from '../NeumorphicCard'
 
 export const REPO_URL = 'https://github.com/SannyDermawan/agenteco-bnb'
 export const SDK_DOCS_URL = `${REPO_URL}/tree/main/agent-runtime#readme`
+export const PYTHON_EXAMPLE_URL = `${REPO_URL}/tree/main/buyer-agent-python`
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
 
-export const INSTALL = `git clone ${REPO_URL}
-npm i ./agenteco-bnb/agent-runtime tsx`
+// The SDK is a TypeScript package on npm, run with tsx.
+export const INSTALL = `npm i @agenteco/sdk tsx`
 
 /** Prints a new key and its address. The key goes in your .env; only the address is ever pasted here. */
-export const KEYGEN = `npx tsx -e "import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'; const k = generatePrivateKey(); console.log('AGENT_PRIVATE_KEY=' + k); console.log('address:', privateKeyToAccount(k).address)"`
+export const KEYGEN = `npx tsx -e "import { generatePrivateKey, privateKeyToAccount } from '@agenteco/sdk'; const k = generatePrivateKey(); console.log('AGENT_PRIVATE_KEY=' + k); console.log('address:', privateKeyToAccount(k).address)"`
+
+/** The same for an agent that is not written in TypeScript: any wallet generator works. */
+export const KEYGEN_PYTHON = `pip install eth-account
+python -c "from eth_account import Account; a = Account.create(); print('AGENT_PRIVATE_KEY=0x' + a.key.hex().removeprefix('0x')); print('address:', a.address)"`
 
 export const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/
 
