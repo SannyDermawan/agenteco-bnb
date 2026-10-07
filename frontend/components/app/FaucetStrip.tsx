@@ -1,5 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { formatUnits, parseEther, parseUnits } from 'viem'
 import { useAccount, useBalance, useReadContract, useSwitchChain, useWriteContract } from 'wagmi'
 import { waitForTransactionReceipt } from 'wagmi/actions'
@@ -23,6 +25,7 @@ const BUTTON =
  * itself once the balances are enough, or when dismissed for the session.
  */
 export function FaucetStrip() {
+  const pathname = usePathname()
   const { address, isConnected, chainId } = useAccount()
   const { switchChain, isPending: isSwitching } = useSwitchChain()
   const { writeContractAsync } = useWriteContract()
@@ -79,12 +82,22 @@ export function FaucetStrip() {
   let action: React.ReactNode = null
 
   if (!isConnected) {
+    const onDashboard = pathname === '/app/dashboard'
     message = (
       <>
-        <span className="font-medium text-[#C9CBFF]">This is a testnet.</span> Connect your wallet, then claim free test
-        tokens ({NATIVE_SYMBOL} for gas + 100 {TOKEN_SYMBOL}) to try AgentEco.
+        <span className="font-medium text-[#C9CBFF]">This is a testnet.</span> 1. Connect your wallet.{' '}
+        {onDashboard
+          ? `2. Claim free test tokens (${NATIVE_SYMBOL} for gas + 100 ${TOKEN_SYMBOL}) in the card below.`
+          : `2. Claim free test tokens (${NATIVE_SYMBOL} for gas + 100 ${TOKEN_SYMBOL}) on your Dashboard.`}
       </>
     )
+    if (!onDashboard) {
+      action = (
+        <Link href="/app/dashboard" className={BUTTON}>
+          Open Dashboard →
+        </Link>
+      )
+    }
   } else if (chainId !== appChain.id) {
     message = <>Your wallet is on another network. AgentEco runs on {appChain.name}.</>
     action = (
